@@ -37,28 +37,32 @@ int x_index = 6;
 int x_offset = 0;
 
 // Bit resolution of the ADC's
+#define ADC_RESOLUTION AN_RESOLUTION_10
 #define ADC_BITS      10
 #define ADC_RANGE     (1 << ADC_BITS)
 
 // Voltage at highest count
 #define V_MAX         3.3f
 
+// Number of voltage ranges
+#define VOLTS_MAX     6
+
 // Voltage range entries for each channel
 typedef struct Voltage
 {
   float v_div;      // volts/div
-  bool  unsigned;   // If true, zero is at bottom (otherwise in middle)
-  int   pix_count;  // Pixels per ADC count
+  int   sign_offset; // 0 - zero is at bottom (otherwise ADC_RANGE/2 - in middle)
+  float pix_count;  // Pixels per ADC count
 } Voltage;
 
 Voltage voltage[VOLTS_MAX] =
 {
-  { 0.1f, false, (V_MAX * PIX_DIV) / (ADC_RANGE * 0.1f)},
-  { 0.2f, false, (V_MAX * PIX_DIV) / (ADC_RANGE * 0.1f)},
-  { 0.5f, false, (V_MAX * PIX_DIV) / (ADC_RANGE * 0.1f)},
-  { 1.0f, false, (V_MAX * PIX_DIV) / (ADC_RANGE * 0.1f)},
-  { 2.0f, false, (V_MAX * PIX_DIV) / (ADC_RANGE * 0.1f)},
-  { 5.0f, false, (V_MAX * PIX_DIV) / (ADC_RANGE * 0.1f)}
+  { 0.1f, ADC_RANGE / 2, (V_MAX * PIX_DIV) / (ADC_RANGE * 0.1f)},
+  { 0.2f, ADC_RANGE / 2, (V_MAX * PIX_DIV) / (ADC_RANGE * 0.2f)},
+  { 0.5f, ADC_RANGE / 2, (V_MAX * PIX_DIV) / (ADC_RANGE * 0.5f)},
+  { 1.0f, ADC_RANGE / 2, (V_MAX * PIX_DIV) / (ADC_RANGE * 1.0f)},
+  { 2.0f, ADC_RANGE / 2, (V_MAX * PIX_DIV) / (ADC_RANGE * 2.0f)},
+  { 5.0f, ADC_RANGE / 2, (V_MAX * PIX_DIV) / (ADC_RANGE * 5.0f)}
 };
 
 // The index into the voltage range table (one for each channel)
@@ -66,5 +70,11 @@ int y_index0 = 3;
 int y_index1 = 3;
 
 // The pixel position of the zero voltage point per channel.
-int y_offset0 = 400;
-int y_offset1 = 200;
+int y_offset0 = 240;
+int y_offset1 = 480;
+
+// Set to show channel 1 (channel 0 is always shown)
+bool show_ch1 = false;
+
+// Trigger level on ch0, and whether rising or falling
+

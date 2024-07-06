@@ -1,4 +1,4 @@
-* Oscilloscope for the Arduino Giga R1 and the Giga Display
+# Oscilloscope for the Arduino Giga R1 and the Giga Display
 This board boasts impressive ADC statistics with two independent 1Msps ADC's and a configurable op-amp,
 making it possible to have a competent scope with few or no additional components. 
 
