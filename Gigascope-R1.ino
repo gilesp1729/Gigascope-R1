@@ -2,17 +2,18 @@
 #include <Arduino_GigaDisplay_GFX.h>
 #include <GestureDetector.h>
 #include "gscope.h"
+#include "GS_Button.h"
+#include <fonts/FreeSans18pt7b.h>
 
 // Colours in RGB565.
-#define GC9A01A_CYAN    (uint16_t)0x07FF
-#define GC9A01A_RED     (uint16_t)0xf800
-#define GC9A01A_BLUE    (uint16_t)0x001F
-#define GC9A01A_GREEN   (uint16_t)0x07E0
-#define GC9A01A_MAGENTA (uint16_t)0xF81F
-#define GC9A01A_WHITE   (uint16_t)0xffff
-#define GC9A01A_BLACK   (uint16_t)0x0000
-#define GC9A01A_YELLOW  (uint16_t)0xFFE0
-
+#define CYAN    (uint16_t)0x07FF
+#define RED     (uint16_t)0xf800
+#define BLUE    (uint16_t)0x001F
+#define GREEN   (uint16_t)0x07E0
+#define MAGENTA (uint16_t)0xF81F
+#define WHITE   (uint16_t)0xffff
+#define BLACK   (uint16_t)0x0000
+#define YELLOW  (uint16_t)0xFFE0
 #define GREY (uint16_t)tft.color565(0x7F, 0x7F, 0x7F)
 #define DKGREY (uint16_t)tft.color565(0x3F, 0x3F, 0x3F)
 
@@ -30,6 +31,50 @@ uint64_t last_millis = 0;
 
 GestureDetector detector;
 GigaDisplay_GFX tft;
+GS_Button b_ch0, b_ch1, b_trig;
+
+// Draw a trace from a 2-channel interleaved sample buffer, starting
+// at start_pos (0 or 1)
+// TODO: don't draw off the screen, do triggering, etc. etc.
+void draw_trace(SampleBuffer buf, int start_pos)
+{
+  int i, p, x, y;
+  int y_off = y_offset[start_pos];
+  int y_ind = y_index[start_pos];
+
+  int prev_x = x_offset + start_pos * tb[x_index].p_sam;
+  int prev_y = y_off - (buf[0] - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count;
+
+  for (i = 0, p = start_pos + 2; p < buf.size(); i++, p += 2) 
+  {
+    x = x_offset + i * tb[x_index].p_sam;
+    y = y_off - (buf[p] - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count;
+    tft.drawLine(prev_x, prev_y, x, y, WHITE);
+    prev_x = x;
+    prev_y = y;
+  }
+
+}
+
+// Draw furniture at top of screen. Timebase, 2 channels, and trigger settings.
+void draw_tb()
+{
+  char str[32];
+
+  tft.setCursor(0, 30);
+  tft.setTextColor(WHITE);
+  if (tb[x_index].t_div >= 1000)
+    sprintf(str, "%.0fms", tb[x_index].t_div / 1000);
+  else
+    sprintf(str, "%.0fus", tb[x_index].t_div);
+  tft.print(str);
+
+  if (tb[x_index].sps >= 1000000)
+    sprintf(str, " (%dMsps)", tb[x_index].sps / 1000000);
+  else
+    sprintf(str, " (%dksps)", tb[x_index].sps / 1000);
+  tft.print(str);
+}
 
 void setup() {
     Serial.begin(9600);
@@ -46,6 +91,9 @@ void setup() {
 
     tft.setRotation(1);
     detector.setRotation(1);
+    tft.setFont(&FreeSans18pt7b);
+    b_ch0.initButtonUL(&tft, 240, 2, 100, 40, BLACK, YELLOW, BLACK, "CH0", 1, 1);
+    b_ch1.initButtonUL(&tft, 480, 2, 100, 40, BLACK, YELLOW, BLACK, "CH1", 1, 1);
 
     // 1kHz square wave output for testing
     pinMode(2, OUTPUT);
@@ -78,7 +126,7 @@ void loop() {
       samples = bufsize / buf.channels();
       
       // Process the buffer. Interleaved samples.
-      if ((millis() - last_millis) > 20) 
+      if ((millis() - last_millis) > 2000) 
       {
         // Draw the graticule.
         tft.startBuffering();
@@ -99,32 +147,16 @@ void loop() {
           p++;
         }
 #endif
+        // Draw the furniture at the top. 
+        // Custom fonts are drawn from the bottom left corner
+        draw_tb();
+        b_ch0.drawButtonCustom();
+        b_ch1.drawButtonCustom();
 
-        // Draw the traces for each channel. TODO: put this in a subroutine
-        prev_x = x_offset;
-        prev_y = y_offset0 - (buf[0] - voltage[y_index0].sign_offset) * voltage[y_index0].pix_count;
-        for (i = 2; i < samples; i += 2)
-        {
-          x = x_offset + i * tb[x_index].p_sam;
-          y = y_offset0 - (buf[i] - voltage[y_index0].sign_offset) * voltage[y_index0].pix_count;
-          tft.drawLine(prev_x, prev_y, x, y, 0xFFFF);
-          prev_x = x;
-          prev_y = y;
-        }
-        // Back for channel 1
-        if (buf.channels() > 1 && show_ch1)
-        {
-          prev_x = x_offset + tb[x_index].p_sam;
-          prev_y = y_offset1 - (buf[1] - voltage[y_index1].sign_offset) * voltage[y_index1].pix_count;
-          for (i = 3; i < samples; i += 2)
-          {
-            x = x_offset + i * tb[x_index].p_sam;
-            y = y_offset1 - (buf[i] - voltage[y_index1].sign_offset) * voltage[y_index1].pix_count;
-            tft.drawLine(prev_x, prev_y, x, y, 0xFFFF);
-            prev_x = x;
-            prev_y = y;
-          }
-        }
+        // Draw the traces for each channel.
+        draw_trace(buf, 0);
+        if (show_ch1)
+          draw_trace(buf, 1);
 
         last_millis = millis();
         tft.endBuffering();

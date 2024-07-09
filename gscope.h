@@ -66,15 +66,14 @@ Voltage voltage[VOLTS_MAX] =
 };
 
 // The index into the voltage range table (one for each channel)
-int y_index0 = 3;
-int y_index1 = 3;
+int y_index[2] = { 3, 3 };
 
 // The pixel position of the zero voltage point per channel.
-int y_offset0 = 240;
-int y_offset1 = 480;
+int y_offset[2] = { 240, 480 };
 
 // Set to show channel 1 (channel 0 is always shown)
 bool show_ch1 = false;
 
 // Trigger level on ch0, and whether rising or falling
+
 
