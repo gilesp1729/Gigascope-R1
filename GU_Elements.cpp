@@ -1,10 +1,11 @@
 #include "GU_Elements.h"
 
-void GU_Button::initButtonUL(Adafruit_GFX *gfx, int16_t x1,
-                            int16_t y1, uint16_t w, uint16_t h,
+void GU_Button::initButtonUL(int16_t x1, int16_t y1, uint16_t w, uint16_t h,
                             uint16_t outline, uint16_t fill,
                             uint16_t textcolor, char *label,
-                            uint8_t textsize_x, uint8_t textsize_y) 
+                            uint8_t textsize_x, uint8_t textsize_y,
+                            TapCB callback, int indx, void *param);
+
 {
   _x1 = x1;
   _y1 = y1;
@@ -15,13 +16,16 @@ void GU_Button::initButtonUL(Adafruit_GFX *gfx, int16_t x1,
   _textcolor = textcolor;
   _textsize_x = textsize_x;
   _textsize_y = textsize_y;
-  _gfx = gfx;
   strncpy(_label, label, 9);
   _label[9] = 0; // strncpy does not place a null at the end.
                 // When 'label' is >9 characters, _label is not terminated.
+  _callback = callback;
+  _indx = indx;
+  _param = param;
+  _gd->onTap(EV_TAP, _x1, _y1, _w, _h, _callback, _indx, _param); 
 }
 
-void GU_Button::drawButtonCustom(bool inverted = false) 
+void GU_Button::drawButton(bool inverted) 
 {
   uint16_t fill, outline, text;
   int16_t x, y;

@@ -32,7 +32,8 @@ uint64_t last_millis = 0;
 
 GestureDetector detector;
 GigaDisplay_GFX tft;
-GU_Button b_ch0, b_ch1, b_trig;
+GU_Button b_ch0(&tft, &detector);
+GU_Button b_ch1(&tft, &detector);
 
 // Draw a trace from a 2-channel interleaved sample buffer, starting
 // at start_pos (0 or 1)
@@ -96,8 +97,9 @@ void setup() {
     tft.setFont(&FreeSans18pt7b);
     //tft.setTextSize(3);
     
-    b_ch0.initButtonUL(&tft, 240, 2, 100, 40, BLACK, YELLOW, BLACK, "CH0", 1, 1);
-    b_ch1.initButtonUL(&tft, 480, 2, 100, 40, BLACK, YELLOW, BLACK, "CH1", 1, 1);
+    // TODO suply callback, indx and param here
+    b_ch0.initButtonUL(240, 2, 100, 40, BLACK, YELLOW, BLACK, "CH0", 1, 1);
+    b_ch1.initButtonUL(480, 2, 100, 40, BLACK, YELLOW, BLACK, "CH1", 1, 1);
 
     // 1kHz square wave output for testing
     pinMode(2, OUTPUT);
