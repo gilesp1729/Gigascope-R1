@@ -2,7 +2,7 @@
 #include <Arduino_GigaDisplay_GFX.h>
 #include <GestureDetector.h>
 #include "gscope.h"
-#include "GS_Button.h"
+#include "GU_Elements.h"
 #include <fonts/FreeSans18pt7b.h>
 
 // Colours in RGB565.
@@ -22,6 +22,7 @@
 
 // Uses libraries:
 // GestureDetector for screen interaction
+// GU_Elements for UI elements (included here for the moment)
 // Arduino_GigaDisplay_GFX for screen display
 // Arduino_AdvancedAnalog for trace acquisition
 // (and all their dependencies)
@@ -31,7 +32,7 @@ uint64_t last_millis = 0;
 
 GestureDetector detector;
 GigaDisplay_GFX tft;
-GS_Button b_ch0, b_ch1, b_trig;
+GU_Button b_ch0, b_ch1, b_trig;
 
 // Draw a trace from a 2-channel interleaved sample buffer, starting
 // at start_pos (0 or 1)
@@ -91,7 +92,10 @@ void setup() {
 
     tft.setRotation(1);
     detector.setRotation(1);
+    
     tft.setFont(&FreeSans18pt7b);
+    //tft.setTextSize(3);
+    
     b_ch0.initButtonUL(&tft, 240, 2, 100, 40, BLACK, YELLOW, BLACK, "CH0", 1, 1);
     b_ch1.initButtonUL(&tft, 480, 2, 100, 40, BLACK, YELLOW, BLACK, "CH1", 1, 1);
 
@@ -150,8 +154,8 @@ void loop() {
         // Draw the furniture at the top. 
         // Custom fonts are drawn from the bottom left corner
         draw_tb();
-        b_ch0.drawButtonCustom();
-        b_ch1.drawButtonCustom();
+        b_ch0.drawButton();
+        b_ch1.drawButton();
 
         // Draw the traces for each channel.
         draw_trace(buf, 0);
