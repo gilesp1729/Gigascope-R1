@@ -7,6 +7,8 @@ can we have one soon please?). UI clutter is kept to a minimum by using touch sc
 by the multi-touch hardware.
 
 Library dependencies:
-- GestureDetector for screen interaction (gilesp7647/GestureDetector for the moment)
-- Arduino_GigaDisplay_GFX for screen display (requires gilesp7647 fork for the moment; PR pending)
+- GU_Elements for UI elements (gilesp1729/GU_Elements)
+- GestureDetector for gesture interaction (gilesp1729/GestureDetector)
+- FontCollection (gilesp1729/FontCollection)
+- Arduino_GigaDisplay_GFX for screen display (requires gilesp1729 fork for the moment; PR pending)
 - Arduino_AdvancedAnalog for trace acquisition

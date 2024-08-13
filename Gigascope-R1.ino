@@ -1,28 +1,16 @@
 #include <Arduino_AdvancedAnalog.h>
-#include <Arduino_GigaDisplay_GFX.h>
-#include <GestureDetector.h>
+#include <GU_Elements.h>
 #include "gscope.h"
-#include "GU_Elements.h"
 #include <fonts/FreeSans18pt7b.h>
-
-// Colours in RGB565.
-#define CYAN    (uint16_t)0x07FF
-#define RED     (uint16_t)0xf800
-#define BLUE    (uint16_t)0x001F
-#define GREEN   (uint16_t)0x07E0
-#define MAGENTA (uint16_t)0xF81F
-#define WHITE   (uint16_t)0xffff
-#define BLACK   (uint16_t)0x0000
-#define YELLOW  (uint16_t)0xFFE0
-#define GREY (uint16_t)tft.color565(0x7F, 0x7F, 0x7F)
-#define DKGREY (uint16_t)tft.color565(0x3F, 0x3F, 0x3F)
+#include <fonts/UISymbolSans18pt7b.h>
 
 // Oscilloscope for the Giga R1 and Giga Display.
 // Dual channel with two independent 10bit, 1Msps ADC's.
 
 // Uses libraries:
 // GestureDetector for screen interaction
-// GU_Elements for UI elements (included here for the moment)
+// GU_Elements for UI elements 
+// FontCollection for text and symbol display
 // Arduino_GigaDisplay_GFX for screen display
 // Arduino_AdvancedAnalog for trace acquisition
 // (and all their dependencies)
@@ -32,8 +20,20 @@ uint64_t last_millis = 0;
 
 GestureDetector detector;
 GigaDisplay_GFX tft;
-GU_Button b_ch0(&tft, &detector);
-GU_Button b_ch1(&tft, &detector);
+FontCollection fc(&tft, &FreeSans18pt7b, &UISymbolSans18pt7b, 1, 1);
+
+GU_Button b_ch0(&fc, &detector);      // CH0 enable/disable button
+GU_Button b_ch1(&fc, &detector);      // CH1 enable/disable button
+
+GU_Menu m_tb(&fc, &detector);         // Timebase menu
+GU_Menu m_ch0(&fc, &detector);        // CH0 voltage menu
+GU_Menu m_ch1(&fc, &detector);        // CH1 voltage menu
+GU_Menu m_trig(&fc, &detector);       // Trigger options menu
+
+GU_Button mb_tb(&fc, &detector);      // Buttons for the menus
+GU_Button mb_ch0(&fc, &detector);
+GU_Button mb_ch1(&fc, &detector);
+GU_Button mb_trig(&fc, &detector);
 
 // Draw a trace from a 2-channel interleaved sample buffer, starting
 // at start_pos (0 or 1)
@@ -58,61 +58,147 @@ void draw_trace(SampleBuffer buf, int start_pos)
 
 }
 
+// Get short strings for each field
+void tb_tdiv_str(int indx, char *str)
+{
+  if (tb[indx].t_div >= 1000)
+    sprintf(str, "%.0fms", tb[indx].t_div / 1000);
+  else
+    sprintf(str, "%.0fus", tb[indx].t_div);
+}
+
+
+void tb_sps_str(int indx, char *str)
+{
+  if (tb[indx].sps >= 1000000)
+    sprintf(str, " (%dMsps)", tb[indx].sps / 1000000);
+  else
+    sprintf(str, " (%dksps)", tb[indx].sps / 1000);
+}
+
+void ch_vdiv_str(int indx, char *str)
+{
+  if (voltage[indx].v_div < 1.0f)
+    sprintf(str, "%.1fV", voltage[indx].v_div);
+  else
+    sprintf(str, "%.0fV",voltage[indx].v_div);
+}
+
 // Draw furniture at top of screen. Timebase, 2 channels, and trigger settings.
 void draw_tb()
 {
-  char str[32];
-
-  tft.setCursor(0, 30);
-  tft.setTextColor(WHITE);
-  if (tb[x_index].t_div >= 1000)
-    sprintf(str, "%.0fms", tb[x_index].t_div / 1000);
-  else
-    sprintf(str, "%.0fus", tb[x_index].t_div);
-  tft.print(str);
-
-  if (tb[x_index].sps >= 1000000)
-    sprintf(str, " (%dMsps)", tb[x_index].sps / 1000000);
-  else
-    sprintf(str, " (%dksps)", tb[x_index].sps / 1000);
-  tft.print(str);
+  b_ch0.drawButton();
+  b_ch1.drawButton();
+  mb_tb.drawButton();
+  mb_ch0.drawButton();
+  mb_ch1.drawButton();
+  mb_trig.drawButton();
 }
 
-void setup() {
-    Serial.begin(9600);
+// Toggle a channel on and off when tapped. The channel number
+// is in the param.
+void tapCB(EventType ev, int indx, void *param, int x, int y)
+{
+  int ch = (int)param;
 
-    // TODO: Move this code to a callback triggered by X pinch.
+  if ((ev & EV_RELEASED) == 0)
+    return;   // we only act on the releases
 
-    // Resolution, sample rate, number of samples per channel, queue depth.
-    // 1 million SPS seems to be the limit (tested at 8 bit and 10 bit)
-    // Changing sample time to 2_5 makes no difference.
-    if (!adc.begin(ADC_RESOLUTION, tb[x_index].sps, 1024, 32)) {
-        Serial.println("Failed to start analog acquisition!");
-        while (1);
-    }
 
-    tft.setRotation(1);
-    detector.setRotation(1);
-    
-    tft.setFont(&FreeSans18pt7b);
-    //tft.setTextSize(3);
-    
-    // TODO suply callback, indx and param here
-    b_ch0.initButtonUL(240, 2, 100, 40, BLACK, YELLOW, BLACK, "CH0", 1, 1);
-    b_ch1.initButtonUL(480, 2, 100, 40, BLACK, YELLOW, BLACK, "CH1", 1, 1);
 
-    // 1kHz square wave output for testing
-    pinMode(2, OUTPUT);
-    tone(2, 1000);
 }
 
-void loop() {
+// Callbacks are called whenever a menu item is selected.
+// The timebase menu
+void tb_menuCB(EventType ev, int indx, void *param, int x, int y)
+{
+
+
+
+}
+
+// The voltage menu. The channel number is in the param.
+void ch_menuCB(EventType ev, int indx, void *param, int x, int y)
+{
+
+
+
+}
+
+void setup() 
+{
+  int i;
+  char str[9];
+
+  Serial.begin(9600);
+
+  // TODO: Move this code to a callback triggered by X pinch or tb menu selection..
+
+  // Resolution, sample rate, number of samples per channel, queue depth.
+  // 1 million SPS seems to be the limit (tested at 8 bit and 10 bit)
+  // Changing sample time to 2_5 makes no difference.
+
+  if (!adc.begin(ADC_RESOLUTION, tb[x_index].sps, 1024, 32)) {
+
+      Serial.println("Failed to start analog acquisition!");
+      while (1);
+  }
+
+  // Set landscape mode. these must occur togerther.
+  tft.setRotation(1);
+  detector.setRotation(1);
+  
+  // Set up the buttons and menus across the top of the screen.
+  // Timebase
+  tb_tdiv_str(x_index, str);
+  mb_tb.initButtonUL(50, 5, 100, 40, WHITE, GREY, WHITE, str, 1);
+  m_tb.initMenu(&mb_tb, WHITE, DKGREY, GREY, WHITE, tb_menuCB, 2, NULL);
+  for (i = 0; i < TB_MAX; i++)
+  {
+    tb_tdiv_str(i,str);
+    m_tb.setMenuItem(i, str);
+  }
+  m_tb.checkMenuItem(x_index, true);
+
+  // Channel 0
+  b_ch0.initButtonUL(250, 5, 100, 40, BLACK, YELLOW, BLACK, "CH0", 1, tapCB, 3, (void *)0);
+  ch_vdiv_str(y_index[0], str);
+  mb_ch0.initButtonUL(350, 5, 100, 40, WHITE, GREY, WHITE, str, 1);
+  m_ch0.initMenu(&mb_ch0, WHITE, DKGREY, GREY, WHITE, ch_menuCB, 4, (void *)0);
+  for (i = 0; i < VOLTS_MAX; i++)
+  {
+    ch_vdiv_str(i, str);
+    m_ch0.setMenuItem(i, str);
+  }
+  m_ch0.checkMenuItem(y_index[0], true);
+
+  // Channel 1
+  b_ch1.initButtonUL(450, 5, 100, 40, BLACK, YELLOW, BLACK, "CH1", 1, tapCB, 5, (void *)1);
+  ch_vdiv_str(y_index[1], str);
+  mb_ch1.initButtonUL(550, 5, 100, 40, WHITE, GREY, WHITE, str, 1);
+  m_ch1.initMenu(&mb_ch1, WHITE, DKGREY, GREY, WHITE, ch_menuCB, 6, (void *)1);
+  for (i = 0; i < VOLTS_MAX; i++)
+  {
+    ch_vdiv_str(i, str);
+    m_ch1.setMenuItem(i, str);
+  }
+  m_ch1.checkMenuItem(y_index[1], true);
+
+  // Trigger settings
+  // TODO the default trigger setting here
+  mb_trig.initButtonUL(650, 5, 100, 40, WHITE, GREY, WHITE, "OFF", 1);
+
+  // 1kHz square wave output for testing
+  pinMode(2, OUTPUT);
+  tone(2, 1000);
+}
+
+void loop() 
+{
     int i, p, s, samples;
 
     // Poll for gesture input
-
-
-
+    detector.poll();
 
     // Acquire and display a trace
     if (adc.available()) 
@@ -156,8 +242,6 @@ void loop() {
         // Draw the furniture at the top. 
         // Custom fonts are drawn from the bottom left corner
         draw_tb();
-        b_ch0.drawButton();
-        b_ch1.drawButton();
 
         // Draw the traces for each channel.
         draw_trace(buf, 0);
