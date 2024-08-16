@@ -71,9 +71,9 @@ void tb_tdiv_str(int indx, char *str)
 void tb_sps_str(int indx, char *str)
 {
   if (tb[indx].sps >= 1000000)
-    sprintf(str, " (%dMsps)", tb[indx].sps / 1000000);
+    sprintf(str, " %dMsps", tb[indx].sps / 1000000);
   else
-    sprintf(str, " (%dksps)", tb[indx].sps / 1000);
+    sprintf(str, " %dksps", tb[indx].sps / 1000);
 }
 
 void ch_vdiv_str(int indx, char *str)
@@ -87,12 +87,16 @@ void ch_vdiv_str(int indx, char *str)
 // Draw furniture at top of screen. Timebase, 2 channels, and trigger settings.
 void draw_tb()
 {
+  char str[9];
+
   b_ch0.drawButton();
   b_ch1.drawButton();
   mb_tb.drawButton();
   mb_ch0.drawButton();
   mb_ch1.drawButton();
   mb_trig.drawButton();
+  tb_sps_str(x_index, str);
+  fc.drawText(str, 120, 40, WHITE);
 }
 
 // Toggle a channel on and off when tapped. The channel number
@@ -131,6 +135,7 @@ void setup()
   char str[9];
 
   Serial.begin(9600);
+  while(!Serial) {}  // TODO - remove this when going standalone
 
   // TODO: Move this code to a callback triggered by X pinch or tb menu selection..
 
@@ -144,6 +149,14 @@ void setup()
       while (1);
   }
 
+  tft.begin();
+  if (detector.begin()) {
+    Serial.println("Touch controller init - OK");
+  } else {
+    Serial.println("Touch controller init - FAILED");
+    while(1) ;
+  }
+
   // Set landscape mode. these must occur togerther.
   tft.setRotation(1);
   detector.setRotation(1);
@@ -151,7 +164,7 @@ void setup()
   // Set up the buttons and menus across the top of the screen.
   // Timebase
   tb_tdiv_str(x_index, str);
-  mb_tb.initButtonUL(50, 5, 100, 40, WHITE, GREY, WHITE, str, 1);
+  mb_tb.initButtonUL(30, 5, 90, 40, WHITE, GREY, WHITE, str, 1);
   m_tb.initMenu(&mb_tb, WHITE, DKGREY, GREY, WHITE, tb_menuCB, 2, NULL);
   for (i = 0; i < TB_MAX; i++)
   {
@@ -161,9 +174,9 @@ void setup()
   m_tb.checkMenuItem(x_index, true);
 
   // Channel 0
-  b_ch0.initButtonUL(250, 5, 100, 40, BLACK, YELLOW, BLACK, "CH0", 1, tapCB, 3, (void *)0);
+  b_ch0.initButtonUL(250, 5, 90, 40, BLACK, YELLOW, BLACK, "CH0", 1, tapCB, 3, (void *)0);
   ch_vdiv_str(y_index[0], str);
-  mb_ch0.initButtonUL(350, 5, 100, 40, WHITE, GREY, WHITE, str, 1);
+  mb_ch0.initButtonUL(350, 5, 90, 40, WHITE, GREY, WHITE, str, 1);
   m_ch0.initMenu(&mb_ch0, WHITE, DKGREY, GREY, WHITE, ch_menuCB, 4, (void *)0);
   for (i = 0; i < VOLTS_MAX; i++)
   {
@@ -173,9 +186,9 @@ void setup()
   m_ch0.checkMenuItem(y_index[0], true);
 
   // Channel 1
-  b_ch1.initButtonUL(450, 5, 100, 40, BLACK, YELLOW, BLACK, "CH1", 1, tapCB, 5, (void *)1);
+  b_ch1.initButtonUL(450, 5, 90, 40, BLACK, YELLOW, BLACK, "CH1", 1, tapCB, 5, (void *)1);
   ch_vdiv_str(y_index[1], str);
-  mb_ch1.initButtonUL(550, 5, 100, 40, WHITE, GREY, WHITE, str, 1);
+  mb_ch1.initButtonUL(550, 5, 90, 40, WHITE, GREY, WHITE, str, 1);
   m_ch1.initMenu(&mb_ch1, WHITE, DKGREY, GREY, WHITE, ch_menuCB, 6, (void *)1);
   for (i = 0; i < VOLTS_MAX; i++)
   {
@@ -186,7 +199,7 @@ void setup()
 
   // Trigger settings
   // TODO the default trigger setting here
-  mb_trig.initButtonUL(650, 5, 100, 40, WHITE, GREY, WHITE, "OFF", 1);
+  mb_trig.initButtonUL(670, 5, 90, 40, WHITE, GREY, WHITE, "OFF", 1);
 
   // 1kHz square wave output for testing
   pinMode(2, OUTPUT);
@@ -218,7 +231,8 @@ void loop()
       samples = bufsize / buf.channels();
       
       // Process the buffer. Interleaved samples.
-      if ((millis() - last_millis) > 2000) 
+      // Make sure this doesn't get displayed when a menu is active
+      if ((millis() - last_millis) > 2000  && !m_tb.isAnyMenuDisplayed()) 
       {
         // Draw the graticule.
         tft.startBuffering();
