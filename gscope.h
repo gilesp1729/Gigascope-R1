@@ -71,7 +71,8 @@ int y_index[2] = { 3, 3 };
 // The pixel position of the zero voltage point per channel.
 int y_offset[2] = { 240, 480 };
 
-// Set to show channel 1 (channel 0 is always shown)
+// Set to show channel 0 and 1
+bool show_ch0 = true;
 bool show_ch1 = false;
 
 // Trigger level on ch0, and whether rising or falling

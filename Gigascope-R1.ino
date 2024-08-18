@@ -108,25 +108,97 @@ void tapCB(EventType ev, int indx, void *param, int x, int y)
   if ((ev & EV_RELEASED) == 0)
     return;   // we only act on the releases
 
+  switch (ch)
+  {
+  case 0:
+    if (show_ch0)
+    {
+      show_ch0 = false;
+      b_ch0.setColor(YELLOW, BLACK, WHITE); 
+    }
+    else
+    {
+      show_ch0 = true;
+      b_ch0.setColor(YELLOW, YELLOW, BLACK);
+    }
+    break;
 
+  case 1:
+    if (show_ch1)
+    {
+      show_ch1 = false;
+      b_ch1.setColor(YELLOW, BLACK, WHITE); 
+    }
+    else
+    {
+      show_ch1 = true;
+      b_ch1.setColor(YELLOW, YELLOW, BLACK);
+    }
+    break;
+  }
+}
 
+// When x_index is updated, check mark the right menu item in the TB menu,
+// and set the button text to reflect the new setting
+void check_tb_menu(int indx)
+{
+  char str[9];
+
+  for (int i = 0; i < TB_MAX; i++)
+    m_tb.checkMenuItem(i, false);
+  m_tb.checkMenuItem(x_index, true);
+  tb_tdiv_str(x_index, str);
+  mb_tb.setText(str);
+}
+
+// When channel y_index[0] is updated, check mark the right menu item in its menu,
+// and set the button text to reflect the new setting. Similar for channel 1.
+void check_ch0_menu(int indx)
+{
+  char str[9];
+
+  for (int i = 0; i < VOLTS_MAX; i++)
+    m_ch0.checkMenuItem(i, false);
+  m_ch0.checkMenuItem(y_index[0], true);
+  ch_vdiv_str(y_index[0], str);
+  mb_ch0.setText(str);
+}
+
+void check_ch1_menu(int indx)
+{
+  char str[9];
+
+  for (int i = 0; i < VOLTS_MAX; i++)
+    m_ch1.checkMenuItem(i, false);
+  m_ch1.checkMenuItem(y_index[1], true);
+  ch_vdiv_str(y_index[1], str);
+  mb_ch1.setText(str);
 }
 
 // Callbacks are called whenever a menu item is selected.
 // The timebase menu
 void tb_menuCB(EventType ev, int indx, void *param, int x, int y)
 {
+  x_index = indx & 0xFF;   // menu item # in the low byte
 
+  // Take down the ADC and start it up again with the new clock freq
+  adc.stop();
+  adc.begin(ADC_RESOLUTION, tb[x_index].sps, 1024, 32);
 
-
+  // Set the text in the button and check mark the right menu item
+  check_tb_menu(x_index);
 }
 
 // The voltage menu. The channel number is in the param.
 void ch_menuCB(EventType ev, int indx, void *param, int x, int y)
 {
+  int ch = (int)param;
 
-
-
+  y_index[ch] = indx & 0xFF;
+  if (ch == 0)
+    check_ch0_menu(y_index[0]);
+  else
+    check_ch1_menu(y_index[1]);
 }
 
 void setup() 
@@ -174,7 +246,11 @@ void setup()
   m_tb.checkMenuItem(x_index, true);
 
   // Channel 0
-  b_ch0.initButtonUL(250, 5, 90, 40, BLACK, YELLOW, BLACK, "CH0", 1, tapCB, 3, (void *)0);
+  if (show_ch0)
+    b_ch0.initButtonUL(250, 5, 90, 40, YELLOW, YELLOW, BLACK, "CH0", 1, tapCB, 3, (void *)0);
+  else
+    b_ch0.initButtonUL(250, 5, 90, 40, YELLOW, BLACK, WHITE, "CH0", 1, tapCB, 3, (void *)0);
+
   ch_vdiv_str(y_index[0], str);
   mb_ch0.initButtonUL(350, 5, 90, 40, WHITE, GREY, WHITE, str, 1);
   m_ch0.initMenu(&mb_ch0, WHITE, DKGREY, GREY, WHITE, ch_menuCB, 4, (void *)0);
@@ -186,7 +262,11 @@ void setup()
   m_ch0.checkMenuItem(y_index[0], true);
 
   // Channel 1
-  b_ch1.initButtonUL(450, 5, 90, 40, BLACK, YELLOW, BLACK, "CH1", 1, tapCB, 5, (void *)1);
+  if (show_ch1)
+    b_ch1.initButtonUL(450, 5, 90, 40, YELLOW, YELLOW, BLACK, "CH1", 1, tapCB, 5, (void *)1);
+  else
+    b_ch1.initButtonUL(450, 5, 90, 40, YELLOW, BLACK, WHITE, "CH1", 1, tapCB, 5, (void *)1);
+
   ch_vdiv_str(y_index[1], str);
   mb_ch1.initButtonUL(550, 5, 90, 40, WHITE, GREY, WHITE, str, 1);
   m_ch1.initMenu(&mb_ch1, WHITE, DKGREY, GREY, WHITE, ch_menuCB, 6, (void *)1);
@@ -258,7 +338,8 @@ void loop()
         draw_tb();
 
         // Draw the traces for each channel.
-        draw_trace(buf, 0);
+        if (show_ch0)
+          draw_trace(buf, 0);
         if (show_ch1)
           draw_trace(buf, 1);
 
