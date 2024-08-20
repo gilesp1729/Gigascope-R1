@@ -35,18 +35,28 @@ GU_Button mb_ch0(&fc, &detector);
 GU_Button mb_ch1(&fc, &detector);
 GU_Button mb_trig(&fc, &detector);
 
+// Globals used during pinch and drag of traces
+bool pinching = false;
+bool dragging = false;
+float orig_tdiv;
+int orig_yoffset;
+
+// Priority of events set up dynamically after the fixed UI is defined
+int trace_pri;
+
 // Draw a trace from a 2-channel interleaved sample buffer, starting
-// at start_pos (0 or 1)
+// at start_pos (0 or 1) which is also the channel number.
 // TODO: don't draw off the screen, do triggering, etc. etc.
 void draw_trace(SampleBuffer buf, int start_pos)
 {
   int i, p, x, y;
-  int y_off = y_offset[start_pos];
-  int y_ind = y_index[start_pos];
+  int y_off = chan[start_pos].y_offset;
+  int y_ind = chan[start_pos].y_index;
 
   int prev_x = x_offset + start_pos * tb[x_index].p_sam;
   int prev_y = y_off - (buf[0] - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count;
-
+  chan[start_pos].y_min = 9999;
+  chan[start_pos].y_max = 0;
   for (i = 0, p = start_pos + 2; p < buf.size(); i++, p += 2) 
   {
     x = x_offset + i * tb[x_index].p_sam;
@@ -54,8 +64,28 @@ void draw_trace(SampleBuffer buf, int start_pos)
     tft.drawLine(prev_x, prev_y, x, y, WHITE);
     prev_x = x;
     prev_y = y;
-  }
 
+    // Accumulate the trace's screen Y extent
+    if (y < chan[start_pos].y_min)
+      chan[start_pos].y_min = y;
+    if (y > chan[start_pos].y_max)
+      chan[start_pos].y_max = y;
+  }
+  // Draw the zero point triangle on the far left side. The offset of 12 pixels
+  // puts the point of the "play" symbol on the line.
+  fc.drawText((char)8, 0, chan[start_pos].y_offset + 12, WHITE);
+}
+
+void draw_trig()
+{
+  // Draw the trigger level indicator on the left.
+  if (trig != 0)
+  {
+    int y_ind = chan[0].y_index;
+    int adc_count = ADC_RANGE * (trig_level / V_MAX);
+    int y_trig = chan[0].y_offset - (adc_count - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count;
+    fc.drawText((char)'T', 0, y_trig + 12, WHITE);
+  }
 }
 
 // Get short strings for each field
@@ -101,40 +131,22 @@ void draw_tb()
 
 // Toggle a channel on and off when tapped. The channel number
 // is in the param.
-void tapCB(EventType ev, int indx, void *param, int x, int y)
+void ch_tapCB(EventType ev, int indx, void *param, int x, int y)
 {
   int ch = (int)param;
 
   if ((ev & EV_RELEASED) == 0)
     return;   // we only act on the releases
 
-  switch (ch)
+  if (chan[ch].shown)
   {
-  case 0:
-    if (show_ch0)
-    {
-      show_ch0 = false;
-      b_ch0.setColor(YELLOW, BLACK, WHITE); 
-    }
-    else
-    {
-      show_ch0 = true;
-      b_ch0.setColor(YELLOW, YELLOW, BLACK);
-    }
-    break;
-
-  case 1:
-    if (show_ch1)
-    {
-      show_ch1 = false;
-      b_ch1.setColor(YELLOW, BLACK, WHITE); 
-    }
-    else
-    {
-      show_ch1 = true;
-      b_ch1.setColor(YELLOW, YELLOW, BLACK);
-    }
-    break;
+    chan[ch].shown = false;
+    chan[ch].b->setColor(YELLOW, BLACK, WHITE); 
+  }
+  else
+  {
+    chan[ch].shown = true;
+    chan[ch].b->setColor(YELLOW, YELLOW, BLACK);
   }
 }
 
@@ -146,39 +158,30 @@ void check_tb_menu(int indx)
 
   for (int i = 0; i < TB_MAX; i++)
     m_tb.checkMenuItem(i, false);
-  m_tb.checkMenuItem(x_index, true);
-  tb_tdiv_str(x_index, str);
+  m_tb.checkMenuItem(indx, true);
+  tb_tdiv_str(indx, str);
   mb_tb.setText(str);
 }
 
-// When channel y_index[0] is updated, check mark the right menu item in its menu,
-// and set the button text to reflect the new setting. Similar for channel 1.
-void check_ch0_menu(int indx)
+// When channel y_index is updated, check mark the right menu item in its menu,
+// and set the button text to reflect the new setting. 
+void check_ch_menu(int ch, int indx)
 {
   char str[9];
 
   for (int i = 0; i < VOLTS_MAX; i++)
-    m_ch0.checkMenuItem(i, false);
-  m_ch0.checkMenuItem(y_index[0], true);
-  ch_vdiv_str(y_index[0], str);
-  mb_ch0.setText(str);
-}
-
-void check_ch1_menu(int indx)
-{
-  char str[9];
-
-  for (int i = 0; i < VOLTS_MAX; i++)
-    m_ch1.checkMenuItem(i, false);
-  m_ch1.checkMenuItem(y_index[1], true);
-  ch_vdiv_str(y_index[1], str);
-  mb_ch1.setText(str);
+    chan[ch].m->checkMenuItem(i, false);
+  chan[ch].m->checkMenuItem(indx, true);
+  ch_vdiv_str(chan[ch].y_index, str);
+  chan[ch].mb->setText(str);
 }
 
 // Callbacks are called whenever a menu item is selected.
 // The timebase menu
 void tb_menuCB(EventType ev, int indx, void *param, int x, int y)
 {
+  if ((indx & 0xFF) == 0xFF)
+    return;
   x_index = indx & 0xFF;   // menu item # in the low byte
 
   // Take down the ADC and start it up again with the new clock freq
@@ -194,11 +197,92 @@ void ch_menuCB(EventType ev, int indx, void *param, int x, int y)
 {
   int ch = (int)param;
 
-  y_index[ch] = indx & 0xFF;
-  if (ch == 0)
-    check_ch0_menu(y_index[0]);
-  else
-    check_ch1_menu(y_index[1]);
+  if ((indx & 0xFF) == 0xFF)
+    return;
+  chan[ch].y_index = indx & 0xFF;
+  check_ch_menu(ch, chan[ch].y_index);
+}
+
+// Handle horizontal pinches and adjust timebase.
+void tb_pinchCB(EventType ev, int indx, void *param, int dx, int dy, float sx, float sy)
+{
+  float tdiv;
+  float min_diff = 1000000.0f;
+  int min_indx;
+
+  if (ev & EV_RELEASED)   // The pinch has been lifted off.
+  {
+    pinching = false;
+    return;
+  }
+  
+  if (!pinching)
+  {
+    orig_tdiv = tb[x_index].t_div;
+    pinching = true;
+  }
+
+  // Find the nearest t/div. Use sx squared to increase sensitivity
+  tdiv = orig_tdiv / (sx * sx);
+  for (int i = 0; i < TB_MAX; i++)
+  {
+    float dt = fabsf(tdiv - tb[i].t_div);
+    if (dt < min_diff)
+    {
+      min_diff = dt;
+      min_indx = i;
+    }
+  }
+  x_index = min_indx;
+  adc.stop();
+  adc.begin(ADC_RESOLUTION, tb[x_index].sps, 1024, 32);
+  check_tb_menu(x_index);
+}
+
+void ch_dragCB(EventType ev, int indx, void *param, int x, int y, int dx, int dy)
+{
+  int ch = (int)param;    // Channel number we are dragging
+
+  if (ev & EV_RELEASED)   // The drag has been lifted off.
+  {
+    dragging = false;
+    return;
+  }
+
+  if (!dragging)
+  {
+    orig_yoffset = chan[ch].y_offset;
+    dragging = true;
+  }
+
+  chan[ch].y_offset = orig_yoffset + dy;
+}
+
+// Trigger menu selection.
+void trigCB(EventType ev, int indx, void *param, int x, int y)
+{
+  if ((indx & 0xFF) == 0xFF)
+    return;
+  trig = indx & 0xFF;   // menu item # in the low byte
+  switch(trig)
+  {
+  case 0:
+    mb_trig.setText("Off");
+    trig_level = rising_level;
+    break;
+  case 1:
+    mb_trig.setText((char)2);
+    trig_level = rising_level;
+    break;
+  case 2:
+    mb_trig.setText((char)4);
+    trig_level = falling_level;
+    break;
+  }
+  m_trig.checkMenuItem(0, false);
+  m_trig.checkMenuItem(1, false);
+  m_trig.checkMenuItem(2, false);
+  m_trig.checkMenuItem(trig, true);
 }
 
 void setup() 
@@ -209,16 +293,14 @@ void setup()
   Serial.begin(9600);
   while(!Serial) {}  // TODO - remove this when going standalone
 
-  // TODO: Move this code to a callback triggered by X pinch or tb menu selection..
-
   // Resolution, sample rate, number of samples per channel, queue depth.
   // 1 million SPS seems to be the limit (tested at 8 bit and 10 bit)
   // Changing sample time to 2_5 makes no difference.
 
-  if (!adc.begin(ADC_RESOLUTION, tb[x_index].sps, 1024, 32)) {
-
-      Serial.println("Failed to start analog acquisition!");
-      while (1);
+  if (!adc.begin(ADC_RESOLUTION, tb[x_index].sps, 1024, 32)) 
+  {
+    Serial.println("Failed to start analog acquisition!");
+    while (1);
   }
 
   tft.begin();
@@ -235,9 +317,10 @@ void setup()
   
   // Set up the buttons and menus across the top of the screen.
   // Timebase
+  int pri = 1;
   tb_tdiv_str(x_index, str);
-  mb_tb.initButtonUL(30, 5, 90, 40, WHITE, GREY, WHITE, str, 1);
-  m_tb.initMenu(&mb_tb, WHITE, DKGREY, GREY, WHITE, tb_menuCB, 2, NULL);
+  mb_tb.initButtonUL(30, 5, 90, 40, WHITE, GREY, WHITE, str, pri++);
+  m_tb.initMenu(&mb_tb, WHITE, DKGREY, GREY, WHITE, tb_menuCB, pri++, NULL);
   for (i = 0; i < TB_MAX; i++)
   {
     tb_tdiv_str(i,str);
@@ -245,41 +328,59 @@ void setup()
   }
   m_tb.checkMenuItem(x_index, true);
 
-  // Channel 0
-  if (show_ch0)
-    b_ch0.initButtonUL(250, 5, 90, 40, YELLOW, YELLOW, BLACK, "CH0", 1, tapCB, 3, (void *)0);
-  else
-    b_ch0.initButtonUL(250, 5, 90, 40, YELLOW, BLACK, WHITE, "CH0", 1, tapCB, 3, (void *)0);
+  // Set up the channel structs
+  chan[0].b = &b_ch0;
+  chan[0].mb = &mb_ch0;
+  chan[0].m = &m_ch0;
+  chan[1].b = &b_ch1;
+  chan[1].mb = &mb_ch1;
+  chan[1].m = &m_ch1;
 
-  ch_vdiv_str(y_index[0], str);
+  // Channel 0
+  if (chan[0].shown)
+    b_ch0.initButtonUL(250, 5, 90, 40, YELLOW, YELLOW, BLACK, "CH0", 1, ch_tapCB, pri++, (void *)0);
+  else
+    b_ch0.initButtonUL(250, 5, 90, 40, YELLOW, BLACK, WHITE, "CH0", 1, ch_tapCB, pri++, (void *)0);
+
+  ch_vdiv_str(chan[0].y_index, str);
   mb_ch0.initButtonUL(350, 5, 90, 40, WHITE, GREY, WHITE, str, 1);
-  m_ch0.initMenu(&mb_ch0, WHITE, DKGREY, GREY, WHITE, ch_menuCB, 4, (void *)0);
+  m_ch0.initMenu(&mb_ch0, WHITE, DKGREY, GREY, WHITE, ch_menuCB, pri++, (void *)0);
   for (i = 0; i < VOLTS_MAX; i++)
   {
     ch_vdiv_str(i, str);
     m_ch0.setMenuItem(i, str);
   }
-  m_ch0.checkMenuItem(y_index[0], true);
+  m_ch0.checkMenuItem(chan[0].y_index, true);
 
   // Channel 1
-  if (show_ch1)
-    b_ch1.initButtonUL(450, 5, 90, 40, YELLOW, YELLOW, BLACK, "CH1", 1, tapCB, 5, (void *)1);
+  if (chan[1].shown)
+    b_ch1.initButtonUL(450, 5, 90, 40, YELLOW, YELLOW, BLACK, "CH1", 1, ch_tapCB, pri++, (void *)1);
   else
-    b_ch1.initButtonUL(450, 5, 90, 40, YELLOW, BLACK, WHITE, "CH1", 1, tapCB, 5, (void *)1);
+    b_ch1.initButtonUL(450, 5, 90, 40, YELLOW, BLACK, WHITE, "CH1", 1, ch_tapCB, pri++, (void *)1);
 
-  ch_vdiv_str(y_index[1], str);
+  ch_vdiv_str(chan[1].y_index, str);
   mb_ch1.initButtonUL(550, 5, 90, 40, WHITE, GREY, WHITE, str, 1);
-  m_ch1.initMenu(&mb_ch1, WHITE, DKGREY, GREY, WHITE, ch_menuCB, 6, (void *)1);
+  m_ch1.initMenu(&mb_ch1, WHITE, DKGREY, GREY, WHITE, ch_menuCB, pri++, (void *)1);
   for (i = 0; i < VOLTS_MAX; i++)
   {
     ch_vdiv_str(i, str);
     m_ch1.setMenuItem(i, str);
   }
-  m_ch1.checkMenuItem(y_index[1], true);
+  m_ch1.checkMenuItem(chan[1].y_index, true);
 
   // Trigger settings
-  // TODO the default trigger setting here
-  mb_trig.initButtonUL(670, 5, 90, 40, WHITE, GREY, WHITE, "OFF", 1);
+  mb_trig.initButtonUL(670, 5, 90, 40, WHITE, GREY, WHITE, "Off", 1);
+  m_trig.initMenu(&mb_trig, WHITE, DKGREY, GREY, WHITE, trigCB, pri++, NULL);
+  m_trig.setMenuItem(0, "Off");
+  m_trig.setMenuItem(1, (char)2);   // rising edge
+  m_trig.setMenuItem(2, (char)4);   // falling edge
+  m_trig.checkMenuItem(0, true);    // default is OFF
+
+  // Set up horizontal pinch for timebase zooming. Vertical drags and pinches
+  // will wait till some trace(s) are drawn. Save the priority of the
+  // next event to be used then.
+  detector.onPinch(0, 0, 0, 0, tb_pinchCB, pri++, NULL, false, CO_HORIZ, 2);
+  trace_pri = pri;
 
   // 1kHz square wave output for testing
   pinMode(2, OUTPUT);
@@ -312,7 +413,7 @@ void loop()
       
       // Process the buffer. Interleaved samples.
       // Make sure this doesn't get displayed when a menu is active
-      if ((millis() - last_millis) > 2000  && !m_tb.isAnyMenuDisplayed()) 
+      if ((millis() - last_millis) > 100  && !m_tb.isAnyMenuDisplayed()) 
       {
         // Draw the graticule.
         tft.startBuffering();
@@ -337,11 +438,25 @@ void loop()
         // Custom fonts are drawn from the bottom left corner
         draw_tb();
 
-        // Draw the traces for each channel.
-        if (show_ch0)
-          draw_trace(buf, 0);
-        if (show_ch1)
-          draw_trace(buf, 1);
+        // Draw the traces for each channel. Adapt the drag/pinch event(s) to
+        // the envelopes of the trace(s).
+        for (int ch = 0; ch < 2; ch++)
+        {
+          if (chan[ch].shown)
+          {
+            draw_trace(buf, ch);
+            detector.onDrag(0, chan[ch].y_min, tft.width(), chan[ch].y_max - chan[ch].y_min, 
+                            ch_dragCB, trace_pri + ch, (void *)ch, CO_VERT, 2);
+          }
+          else
+          {
+            // Channel 0 not shown, make sure that any drag event is turned off.
+            detector.cancelEvent(trace_pri + ch);
+          }
+        }
+
+        // Draw the trigger level indicator on the left.
+        draw_trig();
 
         last_millis = millis();
         tft.endBuffering();

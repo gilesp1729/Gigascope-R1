@@ -65,16 +65,30 @@ Voltage voltage[VOLTS_MAX] =
   { 5.0f, ADC_RANGE / 2, (V_MAX * PIX_DIV) / (ADC_RANGE * 5.0f)}
 };
 
-// The index into the voltage range table (one for each channel)
-int y_index[2] = { 3, 3 };
+typedef struct Channel
+{
+  int y_index;      // The index into the voltage range table
+  int y_offset;     // The pixel position of the zero voltage point
+  bool shown;       // Set to show trace for channel
+  int y_min;        // Min and max Y extent on screen
+  int y_max;
+  GU_Button *b;     // Channel toggle button
+  GU_Button *mb;    // Channel menu button
+  GU_Menu *m;       // Channel menu
+} Channel;
 
-// The pixel position of the zero voltage point per channel.
-int y_offset[2] = { 240, 480 };
+Channel chan[2] =
+{
+  {3, 240, true, NULL, NULL, NULL },
+  {3, 360, false, NULL, NULL, NULL }
+};
 
-// Set to show channel 0 and 1
-bool show_ch0 = true;
-bool show_ch1 = false;
-
-// Trigger level on ch0, and whether rising or falling
-
+// Trigger level on ch0, and whether rising or falling.
+// Default levels are:
+// - rising, logic HIGH (2.5V)
+// - falling, logic LOW (0.5V)
+float rising_level = 2.5f;
+float falling_level = 0.5f;
+float trig_level = rising_level;
+int trig = 0;   // 0 = Off, 1 = rising, 2 = falling
 
