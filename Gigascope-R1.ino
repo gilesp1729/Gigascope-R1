@@ -46,7 +46,6 @@ int trace_pri;
 
 // Draw a trace from a 2-channel interleaved sample buffer, starting
 // at start_pos (0 or 1) which is also the channel number.
-// TODO: don't draw off the screen, do triggering, etc. etc.
 void draw_trace(SampleBuffer buf, int start_pos)
 {
   int i, p, x, y;
@@ -76,15 +75,58 @@ void draw_trace(SampleBuffer buf, int start_pos)
   fc.drawText((char)8, 0, chan[start_pos].y_offset + 12, WHITE);
 }
 
+// Draw the trigger level indicator on the left.
 void draw_trig()
 {
-  // Draw the trigger level indicator on the left.
   if (trig != 0)
   {
     int y_ind = chan[0].y_index;
     int adc_count = ADC_RANGE * (trig_level / V_MAX);
     int y_trig = chan[0].y_offset - (adc_count - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count;
     fc.drawText((char)'T', 0, y_trig + 12, WHITE);
+  }
+}
+
+// Find the trigger point in channel 0.
+void find_trigger(SampleBuffer buf)
+{
+  int adc_count = ADC_RANGE * (trig_level / V_MAX);
+  int i;
+
+  x_offset = 0;
+  switch (trig)
+  {
+  case 1:     // rising
+    // Look for the buffer readings crossing adc_count.
+    // If signal is high, wait till it goes low then high again.
+    i = 0;
+    while (buf[i] > adc_count && i < buf.size())
+      i += 2;
+    if (i >= buf.size())
+      return;     // no trigger found, leave x_offset alone      
+
+    while (buf[i] < adc_count && i < buf.size())
+      i += 2;
+    if (i >= buf.size())
+      return; 
+
+    x_offset = -(i / 2) * tb[x_index].p_sam;
+    break;
+
+  case 2:     // falling
+    i = 0;
+    while (buf[i] < adc_count && i < buf.size())
+      i += 2;
+    if (i >= buf.size())
+      return;     // no trigger found, leave x_offset alone      
+
+    while (buf[i] > adc_count && i < buf.size())
+      i += 2;
+    if (i >= buf.size())
+      return; 
+
+    x_offset = -(i / 2) * tb[x_index].p_sam;
+    break;
   }
 }
 
@@ -437,6 +479,9 @@ void loop()
         // Draw the furniture at the top. 
         // Custom fonts are drawn from the bottom left corner
         draw_tb();
+
+        // Find the trigger point set set x_offset accordingly.
+        find_trigger(buf);
 
         // Draw the traces for each channel. Adapt the drag/pinch event(s) to
         // the envelopes of the trace(s).
