@@ -67,20 +67,21 @@ Voltage voltage[VOLTS_MAX] =
 
 typedef struct Channel
 {
-  int y_index;      // The index into the voltage range table
-  int y_offset;     // The pixel position of the zero voltage point
-  bool shown;       // Set to show trace for channel
-  int y_min;        // Min and max Y extent on screen
-  int y_max;
-  GU_Button *b;     // Channel toggle button
-  GU_Button *mb;    // Channel menu button
-  GU_Menu *m;       // Channel menu
+  int       y_index;    // The index into the voltage range table
+  int       y_offset;   // The pixel position of the zero voltage point
+  bool      shown;      // Set to show trace for channel
+  int       y_min;      // Min and max Y extent on screen
+  int       y_max;
+  uint16_t  color;      // Color of traces and channel buttons
+  GU_Button *b;         // Channel toggle button
+  GU_Button *mb;        // Channel menu button
+  GU_Menu   *m;         // Channel menu
 } Channel;
 
 Channel chan[2] =
 {
-  {3, 240, true, NULL, NULL, NULL },
-  {3, 360, false, NULL, NULL, NULL }
+  {3, 240, true,  0, 0, YELLOW, NULL, NULL, NULL },
+  {3, 360, false, 0, 0, CYAN,   NULL, NULL, NULL }
 };
 
 // Trigger level on ch0, and whether rising or falling.

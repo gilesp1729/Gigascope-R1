@@ -60,7 +60,7 @@ void draw_trace(SampleBuffer buf, int start_pos)
   {
     x = x_offset + i * tb[x_index].p_sam;
     y = y_off - (buf[p] - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count;
-    tft.drawLine(prev_x, prev_y, x, y, WHITE);
+    tft.drawLine(prev_x, prev_y, x, y, chan[start_pos].color);
     prev_x = x;
     prev_y = y;
 
@@ -72,7 +72,7 @@ void draw_trace(SampleBuffer buf, int start_pos)
   }
   // Draw the zero point triangle on the far left side. The offset of 12 pixels
   // puts the point of the "play" symbol on the line.
-  fc.drawText((char)8, 0, chan[start_pos].y_offset + 12, WHITE);
+  fc.drawText((char)8, 0, chan[start_pos].y_offset + 12, chan[start_pos].color);
 }
 
 // Draw the trigger level indicator on the left.
@@ -83,7 +83,7 @@ void draw_trig()
     int y_ind = chan[0].y_index;
     int adc_count = ADC_RANGE * (trig_level / V_MAX);
     int y_trig = chan[0].y_offset - (adc_count - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count;
-    fc.drawText((char)'T', 0, y_trig + 12, WHITE);
+    fc.drawText((char)'T', 0, y_trig + 12, chan[0].color);
   }
 }
 
@@ -143,9 +143,9 @@ void tb_tdiv_str(int indx, char *str)
 void tb_sps_str(int indx, char *str)
 {
   if (tb[indx].sps >= 1000000)
-    sprintf(str, " %dMsps", tb[indx].sps / 1000000);
+    sprintf(str, "(%dMsps)", tb[indx].sps / 1000000);
   else
-    sprintf(str, " %dksps", tb[indx].sps / 1000);
+    sprintf(str, "(%dksps)", tb[indx].sps / 1000);
 }
 
 void ch_vdiv_str(int indx, char *str)
@@ -159,7 +159,7 @@ void ch_vdiv_str(int indx, char *str)
 // Draw furniture at top of screen. Timebase, 2 channels, and trigger settings.
 void draw_tb()
 {
-  char str[9];
+  char str[16];
 
   b_ch0.drawButton();
   b_ch1.drawButton();
@@ -168,7 +168,7 @@ void draw_tb()
   mb_ch1.drawButton();
   mb_trig.drawButton();
   tb_sps_str(x_index, str);
-  fc.drawText(str, 120, 40, WHITE);
+  fc.drawText(str, 150, 36, WHITE);
 }
 
 // Toggle a channel on and off when tapped. The channel number
@@ -183,12 +183,12 @@ void ch_tapCB(EventType ev, int indx, void *param, int x, int y)
   if (chan[ch].shown)
   {
     chan[ch].shown = false;
-    chan[ch].b->setColor(YELLOW, BLACK, WHITE); 
+    chan[ch].b->setColor(chan[ch].color, BLACK, WHITE); 
   }
   else
   {
     chan[ch].shown = true;
-    chan[ch].b->setColor(YELLOW, YELLOW, BLACK);
+    chan[ch].b->setColor(chan[ch].color, chan[ch].color, BLACK);
   }
 }
 
@@ -361,7 +361,7 @@ void setup()
   // Timebase
   int pri = 1;
   tb_tdiv_str(x_index, str);
-  mb_tb.initButtonUL(30, 5, 90, 40, WHITE, GREY, WHITE, str, pri++);
+  mb_tb.initButtonUL(30, 5, 110, 40, WHITE, GREY, WHITE, str, pri++);
   m_tb.initMenu(&mb_tb, WHITE, DKGREY, GREY, WHITE, tb_menuCB, pri++, NULL);
   for (i = 0; i < TB_MAX; i++)
   {
@@ -378,30 +378,36 @@ void setup()
   chan[1].mb = &mb_ch1;
   chan[1].m = &m_ch1;
 
-  // Channel 0
-  if (chan[0].shown)
-    b_ch0.initButtonUL(250, 5, 90, 40, YELLOW, YELLOW, BLACK, "CH0", 1, ch_tapCB, pri++, (void *)0);
-  else
-    b_ch0.initButtonUL(250, 5, 90, 40, YELLOW, BLACK, WHITE, "CH0", 1, ch_tapCB, pri++, (void *)0);
-
-  ch_vdiv_str(chan[0].y_index, str);
-  mb_ch0.initButtonUL(350, 5, 90, 40, WHITE, GREY, WHITE, str, 1);
-  m_ch0.initMenu(&mb_ch0, WHITE, DKGREY, GREY, WHITE, ch_menuCB, pri++, (void *)0);
-  for (i = 0; i < VOLTS_MAX; i++)
+  // Channel buttons and menus
+  int x = 320;
+  for (int ch = 0; ch < 2; ch++)
   {
-    ch_vdiv_str(i, str);
-    m_ch0.setMenuItem(i, str);
-  }
-  m_ch0.checkMenuItem(chan[0].y_index, true);
+    sprintf(str, "CH%d", ch);
+    if (chan[ch].shown)
+      chan[ch].b->initButtonUL(x, 5, 90, 40, chan[ch].color, chan[ch].color, BLACK, str, 1, ch_tapCB, pri++, (void *)ch);
+    else
+      chan[ch].b->initButtonUL(x, 5, 90, 40, chan[ch].color, BLACK, WHITE, str, 1, ch_tapCB, pri++, (void *)ch);
 
+    ch_vdiv_str(chan[ch].y_index, str);
+    chan[ch].mb->initButtonUL(x + 100, 5, 90, 40, WHITE, GREY, WHITE, str, 1);
+    chan[ch].m->initMenu(chan[ch].mb, WHITE, DKGREY, GREY, WHITE, ch_menuCB, pri++, (void *)ch);
+    for (i = 0; i < VOLTS_MAX; i++)
+    {
+      ch_vdiv_str(i, str);
+      chan[ch].m->setMenuItem(i, str);
+    }
+    chan[ch].m->checkMenuItem(chan[ch].y_index, true);
+    x = 550;
+  }
+#if 0  
   // Channel 1
   if (chan[1].shown)
-    b_ch1.initButtonUL(450, 5, 90, 40, YELLOW, YELLOW, BLACK, "CH1", 1, ch_tapCB, pri++, (void *)1);
+    b_ch1.initButtonUL(550, 5, 90, 40, chan[1].color, chan[1].color, BLACK, "CH1", 1, ch_tapCB, pri++, (void *)1);
   else
-    b_ch1.initButtonUL(450, 5, 90, 40, YELLOW, BLACK, WHITE, "CH1", 1, ch_tapCB, pri++, (void *)1);
+    b_ch1.initButtonUL(550, 5, 90, 40, chan[1].color, BLACK, WHITE, "CH1", 1, ch_tapCB, pri++, (void *)1);
 
   ch_vdiv_str(chan[1].y_index, str);
-  mb_ch1.initButtonUL(550, 5, 90, 40, WHITE, GREY, WHITE, str, 1);
+  mb_ch1.initButtonUL(650, 5, 90, 40, WHITE, GREY, WHITE, str, 1);
   m_ch1.initMenu(&mb_ch1, WHITE, DKGREY, GREY, WHITE, ch_menuCB, pri++, (void *)1);
   for (i = 0; i < VOLTS_MAX; i++)
   {
@@ -409,9 +415,10 @@ void setup()
     m_ch1.setMenuItem(i, str);
   }
   m_ch1.checkMenuItem(chan[1].y_index, true);
+#endif
 
   // Trigger settings
-  mb_trig.initButtonUL(670, 5, 90, 40, WHITE, GREY, WHITE, "Off", 1);
+  mb_trig.initButtonUL(650, tft.height() - 50, 90, 40, WHITE, GREY, WHITE, "Off", 1);
   m_trig.initMenu(&mb_trig, WHITE, DKGREY, GREY, WHITE, trigCB, pri++, NULL);
   m_trig.setMenuItem(0, "Off");
   m_trig.setMenuItem(1, (char)2);   // rising edge
