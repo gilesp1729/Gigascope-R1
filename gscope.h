@@ -72,6 +72,8 @@ typedef struct Channel
   bool      shown;      // Set to show trace for channel
   int       y_min;      // Min and max Y extent on screen
   int       y_max;
+  int       trig_pt;    // Trigger point (a sample number)
+  float     freq;       // Frequency of signal (Hz)
   uint16_t  color;      // Color of traces and channel buttons
   GU_Button *b;         // Channel toggle button
   GU_Button *mb;        // Channel menu button
@@ -80,8 +82,8 @@ typedef struct Channel
 
 Channel chan[2] =
 {
-  {3, 240, true,  0, 0, YELLOW, NULL, NULL, NULL },
-  {3, 360, false, 0, 0, CYAN,   NULL, NULL, NULL }
+  {3, 240, true,  0, 0, 0, 0, YELLOW, NULL, NULL, NULL },
+  {3, 360, false, 0, 0, 0, 0, CYAN,   NULL, NULL, NULL }
 };
 
 // Trigger level on ch0, and whether rising or falling.

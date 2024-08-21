@@ -76,7 +76,7 @@ void draw_trace(SampleBuffer buf, int start_pos)
 }
 
 // Draw the trigger level indicator on the left.
-void draw_trig()
+void draw_trig_level()
 {
   if (trig != 0)
   {
@@ -87,47 +87,76 @@ void draw_trig()
   }
 }
 
-// Find the trigger point in channel 0.
-void find_trigger(SampleBuffer buf)
+// Find the next trigger sample in the buffer, starting at the given
+// sample position (assuming interleaved 2-channel data). 
+// Start_pos starts at 0 for channel 0, and 1 for channel 2.
+// Return 0 if no trigger was found.
+int find_next_trigger(SampleBuffer buf, int start_pos)
 {
   int adc_count = ADC_RANGE * (trig_level / V_MAX);
-  int i;
+  int i, trig_pos;
 
-  x_offset = 0;
+  trig_pos = 0;
   switch (trig)
   {
+  case 0:     // trigger off (still need trigger points for freq display)
   case 1:     // rising
     // Look for the buffer readings crossing adc_count.
     // If signal is high, wait till it goes low then high again.
-    i = 0;
-    while (buf[i] > adc_count && i < buf.size())
+    i = start_pos;
+    while (i < buf.size() && buf[i] > adc_count)
       i += 2;
     if (i >= buf.size())
-      return;     // no trigger found, leave x_offset alone      
+      return 0;     // no trigger found      
 
-    while (buf[i] < adc_count && i < buf.size())
+    while (i < buf.size() && buf[i] < adc_count)
       i += 2;
     if (i >= buf.size())
-      return; 
-
-    x_offset = -(i / 2) * tb[x_index].p_sam;
+      return 0; 
     break;
 
   case 2:     // falling
     i = 0;
-    while (buf[i] < adc_count && i < buf.size())
+    while (i < buf.size() && buf[i] < adc_count)
       i += 2;
     if (i >= buf.size())
-      return;     // no trigger found, leave x_offset alone      
+      return 0;      
 
-    while (buf[i] > adc_count && i < buf.size())
+    while (i < buf.size() && buf[i] > adc_count)
       i += 2;
     if (i >= buf.size())
-      return; 
-
-    x_offset = -(i / 2) * tb[x_index].p_sam;
+      return 0; 
     break;
   }
+  return i;
+}
+
+// Find a set of trigger points and calculate the frequency of the input
+// from them. Store the first trigger point with the channel.
+// Start_pos starts at 0 for channel 0, and 1 for channel 2.
+void find_trig_and_freq(SampleBuffer buf, int start_pos)
+{
+  int trig_pos;
+  int prev_trig = find_next_trigger(buf, start_pos);
+  int n_trig = 0;
+  long spacing = 0;
+
+  chan[start_pos].trig_pt = 0;
+  chan[start_pos].freq = 0;
+  if (prev_trig == 0)
+    return;
+  chan[start_pos].trig_pt = prev_trig;
+
+  while ((trig_pos = find_next_trigger(buf, prev_trig)) != 0)
+  {
+    // Accumulate the trigger spacing.
+    spacing += (trig_pos - prev_trig) / 2;
+    n_trig++;
+    prev_trig = trig_pos;
+  }
+  if (n_trig == 0)
+    return;
+  chan[start_pos].freq = tb[x_index].sps / (spacing / n_trig);    
 }
 
 // Get short strings for each field
@@ -156,8 +185,16 @@ void ch_vdiv_str(int indx, char *str)
     sprintf(str, "%.0fV",voltage[indx].v_div);
 }
 
+void ch_freq_str(float freq, char *str)
+{
+  if (freq < 1000.0f)
+    sprintf(str, "%.1fHz", freq);
+  else
+    sprintf(str, "%.0fkHz", freq / 1000);
+}
+
 // Draw furniture at top of screen. Timebase, 2 channels, and trigger settings.
-void draw_tb()
+void draw_furniture()
 {
   char str[16];
 
@@ -169,6 +206,8 @@ void draw_tb()
   mb_trig.drawButton();
   tb_sps_str(x_index, str);
   fc.drawText(str, 150, 36, WHITE);
+  ch_freq_str(chan[0].freq, str);
+  fc.drawText(str, 30, tft.height() - 50, chan[0].color);
 }
 
 // Toggle a channel on and off when tapped. The channel number
@@ -399,23 +438,6 @@ void setup()
     chan[ch].m->checkMenuItem(chan[ch].y_index, true);
     x = 550;
   }
-#if 0  
-  // Channel 1
-  if (chan[1].shown)
-    b_ch1.initButtonUL(550, 5, 90, 40, chan[1].color, chan[1].color, BLACK, "CH1", 1, ch_tapCB, pri++, (void *)1);
-  else
-    b_ch1.initButtonUL(550, 5, 90, 40, chan[1].color, BLACK, WHITE, "CH1", 1, ch_tapCB, pri++, (void *)1);
-
-  ch_vdiv_str(chan[1].y_index, str);
-  mb_ch1.initButtonUL(650, 5, 90, 40, WHITE, GREY, WHITE, str, 1);
-  m_ch1.initMenu(&mb_ch1, WHITE, DKGREY, GREY, WHITE, ch_menuCB, pri++, (void *)1);
-  for (i = 0; i < VOLTS_MAX; i++)
-  {
-    ch_vdiv_str(i, str);
-    m_ch1.setMenuItem(i, str);
-  }
-  m_ch1.checkMenuItem(chan[1].y_index, true);
-#endif
 
   // Trigger settings
   mb_trig.initButtonUL(650, tft.height() - 50, 90, 40, WHITE, GREY, WHITE, "Off", 1);
@@ -438,16 +460,12 @@ void setup()
 
 void loop() 
 {
-    int i, p, s, samples;
-
     // Poll for gesture input
     detector.poll();
 
     // Acquire and display a trace
     if (adc.available()) 
     {
-      int prev_x, prev_y, x, y;
-      int bufsize;
       SampleBuffer buf = adc.read();
 #if 0
       Serial.print("Channels: ");
@@ -457,13 +475,13 @@ void loop()
       Serial.print(" Size: ");
       Serial.println(buf.size());
 #endif
-      bufsize = buf.size();
-      samples = bufsize / buf.channels();
       
       // Process the buffer. Interleaved samples.
       // Make sure this doesn't get displayed when a menu is active
       if ((millis() - last_millis) > 100  && !m_tb.isAnyMenuDisplayed()) 
       {
+        int i;
+
         // Draw the graticule.
         tft.startBuffering();
         tft.fillScreen(0);
@@ -472,8 +490,10 @@ void loop()
         for (i = 0; i < tft.width(); i += PIX_DIV)
           tft.drawLine(i, 0, i, tft.height(), GREY);
 
-        // Debugging printout
 #if 0
+        // Debugging printout
+        int samples = buf.size() / buf.channels();
+        int p;
         for (i = 0, p = 0; i < samples; i++)
         {
           Serial.print(buf[p]);
@@ -483,12 +503,15 @@ void loop()
           p++;
         }
 #endif
-        // Draw the furniture at the top. 
-        // Custom fonts are drawn from the bottom left corner
-        draw_tb();
+        // Find the frequency and trigger point in channel 0 and set set x_offset accordingly.
+        find_trig_and_freq(buf, 0);
+        if (trig != 0)
+          x_offset = -(chan[0].trig_pt / 2) * tb[x_index].p_sam;
+        else
+          x_offset = 0;
 
-        // Find the trigger point set set x_offset accordingly.
-        find_trigger(buf);
+        // Draw the buttons and other stuff on the screen
+        draw_furniture();
 
         // Draw the traces for each channel. Adapt the drag/pinch event(s) to
         // the envelopes of the trace(s).
@@ -497,7 +520,16 @@ void loop()
           if (chan[ch].shown)
           {
             draw_trace(buf, ch);
-            detector.onDrag(0, chan[ch].y_min, tft.width(), chan[ch].y_max - chan[ch].y_min, 
+
+            // If the envelope is very thin (e.g. a flat trace) make it a bit wider so it is draggable.
+            int trace_y = chan[ch].y_min;
+            int trace_height = chan[ch].y_max - chan[ch].y_min;
+            if (trace_height < 50)
+            {
+              trace_y -= 25;
+              trace_height = 50;
+            }
+            detector.onDrag(0, trace_y, tft.width(), trace_height, 
                             ch_dragCB, trace_pri + ch, (void *)ch, CO_VERT, 2);
           }
           else
@@ -508,7 +540,7 @@ void loop()
         }
 
         // Draw the trigger level indicator on the left.
-        draw_trig();
+        draw_trig_level();
 
         last_millis = millis();
         tft.endBuffering();
