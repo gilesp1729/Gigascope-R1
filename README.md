@@ -6,11 +6,14 @@ The display is 800x480, which is just about enough for a small scope (I'd love a
 can we have one soon please?). UI clutter is kept to a minimum by using touch screen gestures made possible
 by the multi-touch hardware, but there are also menus to select options more conventionally.
 
+Inputs are 0-3.3V on the A0 and A1 pins. A simple voltage divider may be used to read higher voltages, or a bias from +3.3V used to allow
+both positive and negative inputs.
+
 Library dependencies:
 - Arduino_AdvancedAnalog for trace acquisition
-- GU_Elements for UI elements (gilesp1729/GU_Elements)
-- GestureDetector for gesture interaction (gilesp1729/GestureDetector)
-- FontCollection (gilesp1729/FontCollection)
-- Arduino_GigaDisplay_GFX for screen display. This requires the gilesp1729 fork for the moment; a PR is pending but
-I'm not holding my breath. To use the original GFX, simply comment out the startBuffering() and endBuffering() calls.
-You will notice a little more screen flicker.
+- GU_Elements for UI elements ([gilesp1729/GU_Elements](https://github.com/gilesp1729/GU_Elements))
+- Gesture detector library ([gilesp1729/GestureDetector](https://github.com/gilesp1729/GestureDetector))
+- Font collection library ([gilesp1729/FontCollection](https://github.com/gilesp1729/FontCollection))
+- Giga GFX library (Arduino_GigaDisplay_GFX) for screen display. This requires the [gilesp1729 fork](https://github.com/gilesp1729/Arduino_GigaDisplay_GFX) for the moment; a PR is pending but
+I'm not holding my breath. To use the original GFX, simply comment out the startBuffering() and endBuffering() calls. You will notice a little more screen flicker.
+- Giga touch library (Arduino_GigaDisplayTouch)

@@ -46,9 +46,12 @@ int trace_pri;
 
 // Draw a trace from a 2-channel interleaved sample buffer, starting
 // at start_pos (0 or 1) which is also the channel number.
+// While here, accumulate the min and max Y pixel extent (for drag events)
+// and the min and max voltage (for display)
 void draw_trace(SampleBuffer buf, int start_pos)
 {
   int i, p, x, y;
+  float v;
   int y_off = chan[start_pos].y_offset;
   int y_ind = chan[start_pos].y_index;
 
@@ -56,19 +59,29 @@ void draw_trace(SampleBuffer buf, int start_pos)
   int prev_y = y_off - (buf[0] - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count;
   chan[start_pos].y_min = 9999;
   chan[start_pos].y_max = 0;
+  chan[start_pos].v_min = 99999.0f;
+  chan[start_pos].v_max = -99999.0f;
   for (i = 0, p = start_pos + 2; p < buf.size(); i++, p += 2) 
   {
     x = x_offset + i * tb[x_index].p_sam;
     y = y_off - (buf[p] - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count;
+    v = (buf[p] - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count / PIX_DIV; 
     tft.drawLine(prev_x, prev_y, x, y, chan[start_pos].color);
     prev_x = x;
     prev_y = y;
 
-    // Accumulate the trace's screen Y extent
+    // Accumulate the trace's screen Y extent and voltage
+    // (the Y's are inverted wrt the voltage - beware of sign)
     if (y < chan[start_pos].y_min)
+    {
       chan[start_pos].y_min = y;
+      chan[start_pos].v_max = v;
+    }
     if (y > chan[start_pos].y_max)
+    {
       chan[start_pos].y_max = y;
+      chan[start_pos].v_min = v;
+    }
   }
   // Draw the zero point triangle on the far left side. The offset of 12 pixels
   // puts the point of the "play" symbol on the line.
@@ -76,14 +89,14 @@ void draw_trace(SampleBuffer buf, int start_pos)
 }
 
 // Draw the trigger level indicator on the left.
-void draw_trig_level()
+void draw_trig_level(int ch)
 {
   if (trig != 0)
   {
-    int y_ind = chan[0].y_index;
+    int y_ind = chan[ch].y_index;
     int adc_count = ADC_RANGE * (trig_level / V_MAX);
-    int y_trig = chan[0].y_offset - (adc_count - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count;
-    fc.drawText((char)'T', 0, y_trig + 12, chan[0].color);
+    int y_trig = chan[ch].y_offset - (adc_count - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count;
+    fc.drawText((char)'T', 0, y_trig + 12, chan[ch].color);
   }
 }
 
@@ -116,7 +129,7 @@ int find_next_trigger(SampleBuffer buf, int start_pos)
     break;
 
   case 2:     // falling
-    i = 0;
+    i = start_pos;
     while (i < buf.size() && buf[i] < adc_count)
       i += 2;
     if (i >= buf.size())
@@ -147,8 +160,14 @@ void find_trig_and_freq(SampleBuffer buf, int start_pos)
     return;
   chan[start_pos].trig_pt = prev_trig;
 
+// TODO this has been seen to loop. INvestigate.
   while ((trig_pos = find_next_trigger(buf, prev_trig)) != 0)
   {
+#if 0    
+    Serial.print(prev_trig);
+    Serial.print(" ");
+    Serial.println(trig_pos);
+#endif
     // Accumulate the trigger spacing.
     spacing += (trig_pos - prev_trig) / 2;
     n_trig++;
@@ -177,20 +196,35 @@ void tb_sps_str(int indx, char *str)
     sprintf(str, "(%dksps)", tb[indx].sps / 1000);
 }
 
-void ch_vdiv_str(int indx, char *str)
+void ch_vdiv_str(int ch, char *str)
 {
-  if (voltage[indx].v_div < 1.0f)
-    sprintf(str, "%.1fV", voltage[indx].v_div);
+  if (voltage[ch].v_div < 1.0f)
+    sprintf(str, "%.1fV", voltage[ch].v_div);
   else
-    sprintf(str, "%.0fV",voltage[indx].v_div);
+    sprintf(str, "%.0fV",voltage[ch].v_div);
 }
 
-void ch_freq_str(float freq, char *str)
+void ch_freq_str(int ch, char *str)
 {
-  if (freq < 1000.0f)
-    sprintf(str, "%.1fHz", freq);
+  float freq = chan[ch].freq;
+
+  if (freq < 1)
+    str[0] = '\0';  // blank display if no frequency
+  else if (freq < 1000.0f)
+    sprintf(str, "%.0fHz", freq);
+  else if (freq < 10000.0f)
+    sprintf(str, "%.2fkHz", freq / 1000);
   else
     sprintf(str, "%.0fkHz", freq / 1000);
+}
+
+void ch_volt_str(int ch, char *str)
+{
+  float v = chan[ch].v_max - chan[ch].v_min;
+  if (voltage[chan[ch].y_index].sign_offset == 0)   // unsigned
+    sprintf(str, "%.2fVpk", v);
+  else
+    sprintf(str, "%.2fVp-p", v);
 }
 
 // Draw furniture at top of screen. Timebase, 2 channels, and trigger settings.
@@ -206,8 +240,18 @@ void draw_furniture()
   mb_trig.drawButton();
   tb_sps_str(x_index, str);
   fc.drawText(str, 150, 36, WHITE);
-  ch_freq_str(chan[0].freq, str);
-  fc.drawText(str, 30, tft.height() - 50, chan[0].color);
+}
+
+// Draw the voltage and frequency readouts at the bottom of screen.
+// TODO: Some of them may be empty strings.
+void draw_freqs_voltages(int ch)
+{
+  char str[16];
+
+  ch_freq_str(ch, str);
+  fc.drawText(str, 30, tft.height() - 20, chan[ch].color);
+  ch_volt_str(ch, str);
+  fc.drawText(str);
 }
 
 // Toggle a channel on and off when tapped. The channel number
@@ -540,7 +584,10 @@ void loop()
         }
 
         // Draw the trigger level indicator on the left.
-        draw_trig_level();
+        draw_trig_level(0);
+
+        // Draw freq and voltage display.
+        draw_freqs_voltages(0);
 
         last_millis = millis();
         tft.endBuffering();
