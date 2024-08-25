@@ -41,6 +41,9 @@ int x_offset = 0;
 #define ADC_BITS      10
 #define ADC_RANGE     (1 << ADC_BITS)
 
+// Number of samples taken in trace
+#define N_SAMPLES     2048
+
 // Voltage at highest count
 #define V_MAX         3.3f
 
@@ -92,8 +95,11 @@ Channel chan[2] =
 // Default levels are:
 // - rising, logic HIGH (2.5V)
 // - falling, logic LOW (0.5V)
-float rising_level = 2.5f;
+// There is a hysteresis band of 0.15V.
+float rising_level = 2.5f;        // TODO - this is assuming VMAV is 3.3V. Should change with v/div.
 float falling_level = 0.5f;
+float level_hyst = 0.15f;
 float trig_level = rising_level;
-int trig = 0;   // 0 = Off, 1 = rising, 2 = falling
-
+int trig = 0;     // 0 = Off, 1 = rising, 2 = falling
+int trig_ch = 0;  // Channel number to trigger (and to display frequency etc)
+int trig_x = 0;   // X position of trigger point. Initially at left edge (0)

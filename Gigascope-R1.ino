@@ -39,7 +39,7 @@ GU_Button mb_trig(&fc, &detector);
 bool pinching = false;
 bool dragging = false;
 float orig_tdiv;
-int orig_yoffset;
+int orig_yoffset, orig_trig_x;
 
 // Priority of events set up dynamically after the fixed UI is defined
 int trace_pri;
@@ -55,7 +55,7 @@ void draw_trace(SampleBuffer buf, int start_pos)
   int y_off = chan[start_pos].y_offset;
   int y_ind = chan[start_pos].y_index;
 
-  int prev_x = x_offset + start_pos * tb[x_index].p_sam;
+  int prev_x = x_offset + trig_x + start_pos * tb[x_index].p_sam;
   int prev_y = y_off - (buf[0] - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count;
   chan[start_pos].y_min = 9999;
   chan[start_pos].y_max = 0;
@@ -63,9 +63,9 @@ void draw_trace(SampleBuffer buf, int start_pos)
   chan[start_pos].v_max = -99999.0f;
   for (i = 0, p = start_pos + 2; p < buf.size(); i++, p += 2) 
   {
-    x = x_offset + i * tb[x_index].p_sam;
+    x = x_offset + trig_x + i * tb[x_index].p_sam;
     y = y_off - (buf[p] - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count;
-    v = (buf[p] - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count / PIX_DIV; 
+    v = (buf[p] - voltage[y_ind].sign_offset) * V_MAX / ADC_RANGE;    // TODO make V_MAX  change per v/div
     tft.drawLine(prev_x, prev_y, x, y, chan[start_pos].color);
     prev_x = x;
     prev_y = y;
@@ -88,16 +88,21 @@ void draw_trace(SampleBuffer buf, int start_pos)
   fc.drawText((char)8, 0, chan[start_pos].y_offset + 12, chan[start_pos].color);
 }
 
-// Draw the trigger level indicator on the left.
+// Draw the trigger level indicators on the left and above (or below for CH1)
 void draw_trig_level(int ch)
 {
-  if (trig != 0)
-  {
-    int y_ind = chan[ch].y_index;
-    int adc_count = ADC_RANGE * (trig_level / V_MAX);
-    int y_trig = chan[ch].y_offset - (adc_count - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count;
-    fc.drawText((char)'T', 0, y_trig + 12, chan[ch].color);
-  }
+  if (trig == 0)
+    return;
+  int y_ind = chan[ch].y_index;
+  int adc_count = ADC_RANGE * (trig_level / V_MAX);
+  int y_trig = chan[ch].y_offset - (adc_count - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count;
+  fc.drawText((char)'T', 0, y_trig + 12, chan[ch].color);
+
+  // X trigger indicators are ch-up and ch-down symbol characters.
+  if (trig_ch == 0)
+    fc.drawText((char)14, trig_x - 11, chan[trig_ch].y_min, chan[trig_ch].color); 
+  else
+    fc.drawText((char)13, trig_x - 11, chan[trig_ch].y_max + 12, chan[trig_ch].color); 
 }
 
 // Find the next trigger sample in the buffer, starting at the given
@@ -107,6 +112,7 @@ void draw_trig_level(int ch)
 int find_next_trigger(SampleBuffer buf, int start_pos)
 {
   int adc_count = ADC_RANGE * (trig_level / V_MAX);
+  int hyst = ADC_RANGE * (level_hyst / V_MAX);
   int i, trig_pos;
 
   trig_pos = 0;
@@ -117,7 +123,7 @@ int find_next_trigger(SampleBuffer buf, int start_pos)
     // Look for the buffer readings crossing adc_count.
     // If signal is high, wait till it goes low then high again.
     i = start_pos;
-    while (i < buf.size() && buf[i] > adc_count)
+    while (i < buf.size() && buf[i] >= adc_count - hyst)
       i += 2;
     if (i >= buf.size())
       return 0;     // no trigger found      
@@ -130,7 +136,7 @@ int find_next_trigger(SampleBuffer buf, int start_pos)
 
   case 2:     // falling
     i = start_pos;
-    while (i < buf.size() && buf[i] < adc_count)
+    while (i < buf.size() && buf[i] <= adc_count + hyst)
       i += 2;
     if (i >= buf.size())
       return 0;      
@@ -160,10 +166,10 @@ void find_trig_and_freq(SampleBuffer buf, int start_pos)
     return;
   chan[start_pos].trig_pt = prev_trig;
 
-// TODO this has been seen to loop. INvestigate.
   while ((trig_pos = find_next_trigger(buf, prev_trig)) != 0)
   {
-#if 0    
+#if 0
+    // Debugging print to diagnose looping.
     Serial.print(prev_trig);
     Serial.print(" ");
     Serial.println(trig_pos);
@@ -221,10 +227,17 @@ void ch_freq_str(int ch, char *str)
 void ch_volt_str(int ch, char *str)
 {
   float v = chan[ch].v_max - chan[ch].v_min;
-  if (voltage[chan[ch].y_index].sign_offset == 0)   // unsigned
-    sprintf(str, "%.2fVpk", v);
-  else
-    sprintf(str, "%.2fVp-p", v);
+  if (v > 0.001)
+  {
+    if (voltage[chan[ch].y_index].sign_offset == 0)   // unsigned
+      sprintf(str, " %.2fVpk", v);  // leading space since it's drawn after freq string
+    else
+      sprintf(str, " %.2fVp-p", v); // signed, show peak-to-peak
+  }
+  else  // it's flat. Just show the DC voltage
+  {
+    sprintf(str, " %.2fV", chan[ch].v_min);
+  }
 }
 
 // Draw furniture at top of screen. Timebase, 2 channels, and trigger settings.
@@ -243,15 +256,22 @@ void draw_furniture()
 }
 
 // Draw the voltage and frequency readouts at the bottom of screen.
-// TODO: Some of them may be empty strings.
-void draw_freqs_voltages(int ch)
+void draw_freqs_voltages()
 {
   char str[16];
+  int y = tft.height() - 60;
 
-  ch_freq_str(ch, str);
-  fc.drawText(str, 30, tft.height() - 20, chan[ch].color);
-  ch_volt_str(ch, str);
-  fc.drawText(str);
+  for (int ch = 0; ch < 2; ch++)
+  {
+    if (chan[ch].shown)
+    {
+      ch_freq_str(ch, str);
+      fc.drawText(str, 30, y, chan[ch].color);
+      ch_volt_str(ch, str);
+      fc.drawText(str);
+      y += 40;
+    }
+  }
 }
 
 // Toggle a channel on and off when tapped. The channel number
@@ -311,7 +331,7 @@ void tb_menuCB(EventType ev, int indx, void *param, int x, int y)
 
   // Take down the ADC and start it up again with the new clock freq
   adc.stop();
-  adc.begin(ADC_RESOLUTION, tb[x_index].sps, 1024, 32);
+  adc.begin(ADC_RESOLUTION, tb[x_index].sps, N_SAMPLES, 32);
 
   // Set the text in the button and check mark the right menu item
   check_tb_menu(x_index);
@@ -360,8 +380,26 @@ void tb_pinchCB(EventType ev, int indx, void *param, int dx, int dy, float sx, f
   }
   x_index = min_indx;
   adc.stop();
-  adc.begin(ADC_RESOLUTION, tb[x_index].sps, 1024, 32);
+  adc.begin(ADC_RESOLUTION, tb[x_index].sps, N_SAMPLES, 32);
   check_tb_menu(x_index);
+}
+
+// Handle horizontal drags to change the position of the trigger point(trig_x)
+void tb_dragCB(EventType ev, int indx, void *param, int x, int y, int dx, int dy)
+{
+  if (ev & EV_RELEASED)   // The drag has been lifted off.
+  {
+    dragging = false;
+    return;
+  }
+
+  if (!dragging)
+  {
+    orig_trig_x = trig_x;
+    dragging = true;
+  }
+
+  trig_x = orig_trig_x + dx;
 }
 
 void ch_dragCB(EventType ev, int indx, void *param, int x, int y, int dx, int dy)
@@ -386,28 +424,47 @@ void ch_dragCB(EventType ev, int indx, void *param, int x, int y, int dx, int dy
 // Trigger menu selection.
 void trigCB(EventType ev, int indx, void *param, int x, int y)
 {
-  if ((indx & 0xFF) == 0xFF)
+  indx = indx & 0xFF;   // menu item # in the low byte
+  if (indx == 0xFF)
     return;
-  trig = indx & 0xFF;   // menu item # in the low byte
-  switch(trig)
+  if (indx < 3)       // change the trigger level
   {
-  case 0:
-    mb_trig.setText("Off");
-    trig_level = rising_level;
-    break;
-  case 1:
-    mb_trig.setText((char)2);
-    trig_level = rising_level;
-    break;
-  case 2:
-    mb_trig.setText((char)4);
-    trig_level = falling_level;
-    break;
+    trig = indx;
+    switch(trig)
+    {
+    case 0:
+      mb_trig.setText("Off");
+      trig_level = rising_level;
+      break;
+    case 1:
+      mb_trig.setText((char)2);
+      trig_level = rising_level;
+      break;
+    case 2:
+      mb_trig.setText((char)4);
+      trig_level = falling_level;
+      break;
+    }
+    m_trig.checkMenuItem(0, false);
+    m_trig.checkMenuItem(1, false);
+    m_trig.checkMenuItem(2, false);
+    m_trig.checkMenuItem(trig, true);
   }
-  m_trig.checkMenuItem(0, false);
-  m_trig.checkMenuItem(1, false);
-  m_trig.checkMenuItem(2, false);
-  m_trig.checkMenuItem(trig, true);
+  else  // change the trigger source
+  {
+    trig_ch = indx - 3;
+    switch(indx)
+    {
+    case 3:
+      m_trig.checkMenuItem(3, true);    // CH0
+      m_trig.checkMenuItem(4, false);
+      break;
+    case 4:
+      m_trig.checkMenuItem(3, false);
+      m_trig.checkMenuItem(4, true);    // CH1
+      break;
+    }
+  }
 }
 
 void setup() 
@@ -422,7 +479,7 @@ void setup()
   // 1 million SPS seems to be the limit (tested at 8 bit and 10 bit)
   // Changing sample time to 2_5 makes no difference.
 
-  if (!adc.begin(ADC_RESOLUTION, tb[x_index].sps, 1024, 32)) 
+  if (!adc.begin(ADC_RESOLUTION, tb[x_index].sps, N_SAMPLES, 32)) 
   {
     Serial.println("Failed to start analog acquisition!");
     while (1);
@@ -452,6 +509,7 @@ void setup()
     m_tb.setMenuItem(i, str);
   }
   m_tb.checkMenuItem(x_index, true);
+  m_tb.setTip("Set Timebase (time/div)");
 
   // Set up the channel structs
   chan[0].b = &b_ch0;
@@ -480,6 +538,7 @@ void setup()
       chan[ch].m->setMenuItem(i, str);
     }
     chan[ch].m->checkMenuItem(chan[ch].y_index, true);
+    chan[ch].m->setTip("Set channel volts/div, and signed/unsigned");
     x = 550;
   }
 
@@ -488,13 +547,21 @@ void setup()
   m_trig.initMenu(&mb_trig, WHITE, DKGREY, GREY, WHITE, trigCB, pri++, NULL);
   m_trig.setMenuItem(0, "Off");
   m_trig.setMenuItem(1, (char)2);   // rising edge
-  m_trig.setMenuItem(2, (char)4);   // falling edge
-  m_trig.checkMenuItem(0, true);    // default is OFF
+  m_trig.setMenuItem(2, (char)4, true, false, true);   // falling edge, with underline
+  m_trig.setMenuItem(3, "CH0");     // source CH0
+  m_trig.setMenuItem(4, "CH1");     // source CH1
+  m_trig.checkMenuItem(0, true);    // default is trigger OFF
+  m_trig.checkMenuItem(3, true);    // default is trigger on CH0
+  m_trig.setTip("Set trigger options and trigger source");
 
   // Set up horizontal pinch for timebase zooming. Vertical drags and pinches
-  // will wait till some trace(s) are drawn. Save the priority of the
-  // next event to be used then.
+  // will wait till some trace(s) are drawn. 
   detector.onPinch(0, 0, 0, 0, tb_pinchCB, pri++, NULL, false, CO_HORIZ, 2);
+
+  // Set up horizontal drag for scrolling the trace.
+  detector.onDrag(0, 0, 0, 0, tb_dragCB, pri++, NULL, CO_HORIZ, 2);
+
+  // Save the priority to be used for the vertical events.
   trace_pri = pri;
 
   // 1kHz square wave output for testing
@@ -547,10 +614,12 @@ void loop()
           p++;
         }
 #endif
-        // Find the frequency and trigger point in channel 0 and set set x_offset accordingly.
+        // Find the frequency and trigger point and set set x_offset accordingly.
+        // Find frequency for both channels.
         find_trig_and_freq(buf, 0);
+        find_trig_and_freq(buf, 1);
         if (trig != 0)
-          x_offset = -(chan[0].trig_pt / 2) * tb[x_index].p_sam;
+          x_offset = -(chan[trig_ch].trig_pt / 2) * tb[x_index].p_sam;
         else
           x_offset = 0;
 
@@ -584,10 +653,10 @@ void loop()
         }
 
         // Draw the trigger level indicator on the left.
-        draw_trig_level(0);
+        draw_trig_level(trig_ch);
 
-        // Draw freq and voltage display.
-        draw_freqs_voltages(0);
+        // Draw freq and voltage display for channels shown.
+        draw_freqs_voltages();
 
         last_millis = millis();
         tft.endBuffering();
