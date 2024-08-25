@@ -38,8 +38,9 @@ GU_Button mb_trig(&fc, &detector);
 // Globals used during pinch and drag of traces
 bool pinching = false;
 bool dragging = false;
-float orig_tdiv;
+float orig_tdiv, orig_vdiv, orig_trig_level;
 int orig_yoffset, orig_trig_x;
+int y_trig;
 
 // Priority of events set up dynamically after the fixed UI is defined
 int trace_pri;
@@ -86,23 +87,6 @@ void draw_trace(SampleBuffer buf, int start_pos)
   // Draw the zero point triangle on the far left side. The offset of 12 pixels
   // puts the point of the "play" symbol on the line.
   fc.drawText((char)8, 0, chan[start_pos].y_offset + 12, chan[start_pos].color);
-}
-
-// Draw the trigger level indicators on the left and above (or below for CH1)
-void draw_trig_level(int ch)
-{
-  if (trig == 0)
-    return;
-  int y_ind = chan[ch].y_index;
-  int adc_count = ADC_RANGE * (trig_level / V_MAX);
-  int y_trig = chan[ch].y_offset - (adc_count - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count;
-  fc.drawText((char)'T', 0, y_trig + 12, chan[ch].color);
-
-  // X trigger indicators are ch-up and ch-down symbol characters.
-  if (trig_ch == 0)
-    fc.drawText((char)14, trig_x - 11, chan[trig_ch].y_min, chan[trig_ch].color); 
-  else
-    fc.drawText((char)13, trig_x - 11, chan[trig_ch].y_max + 12, chan[trig_ch].color); 
 }
 
 // Find the next trigger sample in the buffer, starting at the given
@@ -348,6 +332,59 @@ void ch_menuCB(EventType ev, int indx, void *param, int x, int y)
   check_ch_menu(ch, chan[ch].y_index);
 }
 
+// Handle vertical pinches on trace.
+void ch_pinchCB(EventType ev, int indx, void *param, int dx, int dy, float sx, float sy)
+{
+  int ch = (int)param;
+  float vdiv;
+  float min_diff = 1000000.0f;
+  int min_indx;
+
+  if (ev & EV_RELEASED)   // The pinch has been lifted off.
+  {
+    pinching = false;
+    return;
+  }
+  
+  if (!pinching)
+  {
+    orig_vdiv = voltage[chan[ch].y_index].v_div;
+    pinching = true;
+  }
+
+  // Find the nearest v/div. Use sy squared to increase sensitivity
+  vdiv = orig_vdiv / (sy * sy);
+  for (int i = 0; i < VOLTS_MAX; i++)
+  {
+    float dv = fabsf(vdiv - voltage[i].v_div);
+    if (dv < min_diff)
+    {
+      min_diff = dv;
+      min_indx = i;
+    }
+  }
+  chan[ch].y_index = min_indx;
+  check_ch_menu(ch, chan[ch].y_index);
+}
+
+// Handle horizontal drags to change the position of the trigger point(trig_x)
+void tb_dragCB(EventType ev, int indx, void *param, int x, int y, int dx, int dy)
+{
+  if (ev & EV_RELEASED)   // The drag has been lifted off.
+  {
+    dragging = false;
+    return;
+  }
+
+  if (!dragging)
+  {
+    orig_trig_x = trig_x;
+    dragging = true;
+  }
+
+  trig_x = orig_trig_x + dx;
+}
+
 // Handle horizontal pinches and adjust timebase.
 void tb_pinchCB(EventType ev, int indx, void *param, int dx, int dy, float sx, float sy)
 {
@@ -384,24 +421,6 @@ void tb_pinchCB(EventType ev, int indx, void *param, int dx, int dy, float sx, f
   check_tb_menu(x_index);
 }
 
-// Handle horizontal drags to change the position of the trigger point(trig_x)
-void tb_dragCB(EventType ev, int indx, void *param, int x, int y, int dx, int dy)
-{
-  if (ev & EV_RELEASED)   // The drag has been lifted off.
-  {
-    dragging = false;
-    return;
-  }
-
-  if (!dragging)
-  {
-    orig_trig_x = trig_x;
-    dragging = true;
-  }
-
-  trig_x = orig_trig_x + dx;
-}
-
 void ch_dragCB(EventType ev, int indx, void *param, int x, int y, int dx, int dy)
 {
   int ch = (int)param;    // Channel number we are dragging
@@ -422,7 +441,7 @@ void ch_dragCB(EventType ev, int indx, void *param, int x, int y, int dx, int dy
 }
 
 // Trigger menu selection.
-void trigCB(EventType ev, int indx, void *param, int x, int y)
+void trig_menuCB(EventType ev, int indx, void *param, int x, int y)
 {
   indx = indx & 0xFF;   // menu item # in the low byte
   if (indx == 0xFF)
@@ -467,6 +486,57 @@ void trigCB(EventType ev, int indx, void *param, int x, int y)
   }
 }
 
+// Drag callbach for moving the trigger level.
+void trig_dragCB(EventType ev, int indx, void *param, int x, int y, int dx, int dy)
+{
+  int y_ind = chan[trig_ch].y_index;
+
+  if (ev & EV_RELEASED)   // The drag has been lifted off.
+  {
+    dragging = false;
+    return;
+  }
+
+  if (!dragging)
+  {
+    orig_trig_level = trig_level;
+    dragging = true;
+  }
+
+  trig_level = orig_trig_level - (dy / voltage[y_ind].pix_count) * (V_MAX / ADC_RANGE);
+}
+
+// Draw the trigger level indicators on the left and above (or below for CH1)
+// along with a vertical drag event to change the trigger level.
+void draw_trig_level(int ch, int pri)
+{
+  if (trig != 0)
+  {
+    char str[10];
+    int y_ind = chan[ch].y_index;
+    int adc_count = ADC_RANGE * (trig_level / V_MAX);
+
+    y_trig = chan[ch].y_offset - (adc_count - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count;
+    fc.drawText((char)'T', 0, y_trig + 12, chan[ch].color);
+
+    // X trigger indicators are ch-up and ch-down symbol characters.
+    if (trig_ch == 0)
+      fc.drawText((char)14, trig_x - 11, chan[trig_ch].y_min, chan[trig_ch].color); 
+    else
+      fc.drawText((char)13, trig_x - 11, chan[trig_ch].y_max + 12, chan[trig_ch].color); 
+    sprintf(str, "%.2fV", trig_level);
+    fc.drawText(str, 550, tft.height() - 20, chan[trig_ch].color);
+
+    detector.onDrag(0, y_trig - 50, 100, 100, trig_dragCB, pri, (void *)trig_ch, CO_VERT, 2);
+  }
+  else
+  {
+    detector.cancelEvent(pri);  // stop ghost drags 
+    fc.drawText("Trig", 550, tft.height() - 20, WHITE);
+  }
+}
+
+
 void setup() 
 {
   int i;
@@ -499,7 +569,7 @@ void setup()
   
   // Set up the buttons and menus across the top of the screen.
   // Timebase
-  int pri = 1;
+  int pri = 0;
   tb_tdiv_str(x_index, str);
   mb_tb.initButtonUL(30, 5, 110, 40, WHITE, GREY, WHITE, str, pri++);
   m_tb.initMenu(&mb_tb, WHITE, DKGREY, GREY, WHITE, tb_menuCB, pri++, NULL);
@@ -544,7 +614,7 @@ void setup()
 
   // Trigger settings
   mb_trig.initButtonUL(650, tft.height() - 50, 90, 40, WHITE, GREY, WHITE, "Off", 1);
-  m_trig.initMenu(&mb_trig, WHITE, DKGREY, GREY, WHITE, trigCB, pri++, NULL);
+  m_trig.initMenu(&mb_trig, WHITE, DKGREY, GREY, WHITE, trig_menuCB, pri++, NULL);
   m_trig.setMenuItem(0, "Off");
   m_trig.setMenuItem(1, (char)2);   // rising edge
   m_trig.setMenuItem(2, (char)4, true, false, true);   // falling edge, with underline
@@ -628,13 +698,18 @@ void loop()
 
         // Draw the traces for each channel. Adapt the drag/pinch event(s) to
         // the envelopes of the trace(s).
+        int pri = trace_pri;
         for (int ch = 0; ch < 2; ch++)
         {
+          int pinch_pri = trace_pri + 2 * ch;
+          int drag_pri = trace_pri + 2 * ch + 1;
           if (chan[ch].shown)
           {
             draw_trace(buf, ch);
 
-            // If the envelope is very thin (e.g. a flat trace) make it a bit wider so it is draggable.
+            // If the envelope is very thin (e.g. a flat trace) make it a bit wider 
+            // so it is draggable. Pinches use the whole screen as it's just not
+            // practical to pick out one trace on such a small screen.
             int trace_y = chan[ch].y_min;
             int trace_height = chan[ch].y_max - chan[ch].y_min;
             if (trace_height < 50)
@@ -642,18 +717,35 @@ void loop()
               trace_y -= 25;
               trace_height = 50;
             }
-            detector.onDrag(0, trace_y, tft.width(), trace_height, 
-                            ch_dragCB, trace_pri + ch, (void *)ch, CO_VERT, 2);
+
+            // Reserve the leftmost 100 pixels of screen for dragging the trigger level
+            // if it is shown.
+            if (trig != 0)
+            {
+              detector.onPinch(100, 0, tft.width() - 100, tft.height(), 
+                              ch_pinchCB, pinch_pri, (void *)ch, false, CO_VERT, 2);
+              detector.onDrag(100, trace_y, tft.width() - 100, trace_height, 
+                              ch_dragCB, drag_pri, (void *)ch, CO_VERT, 2);
+            }
+            else
+            {
+              detector.onPinch(0, 0, 0, 0, 
+                              ch_pinchCB, pinch_pri, (void *)ch, false, CO_VERT, 2);
+              detector.onDrag(0, trace_y, tft.width(), trace_height, 
+                              ch_dragCB, drag_pri, (void *)ch, CO_VERT, 2);
+            }
           }
           else
           {
-            // Channel 0 not shown, make sure that any drag event is turned off.
-            detector.cancelEvent(trace_pri + ch);
+            // Channel not shown, make sure that any events are turned off.
+            detector.cancelEvent(pinch_pri);
+            detector.cancelEvent(drag_pri);
           }
         }
 
-        // Draw the trigger level indicator on the left.
-        draw_trig_level(trig_ch);
+        // Draw the trigger level indicator on the left, with a drag event to
+        // allow it to be changed.
+        draw_trig_level(trig_ch, trace_pri + 4);
 
         // Draw freq and voltage display for channels shown.
         draw_freqs_voltages();
