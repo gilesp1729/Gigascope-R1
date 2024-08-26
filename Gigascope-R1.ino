@@ -55,9 +55,10 @@ void draw_trace(SampleBuffer buf, int start_pos)
   float v;
   int y_off = chan[start_pos].y_offset;
   int y_ind = chan[start_pos].y_index;
+  int sign_offset = chan[start_pos].signed_v ? (ADC_RANGE / 2) : 0;
 
   int prev_x = x_offset + trig_x + start_pos * tb[x_index].p_sam;
-  int prev_y = y_off - (buf[0] - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count;
+  int prev_y = y_off - (buf[0] - sign_offset) * voltage[y_ind].pix_count;
   chan[start_pos].y_min = 9999;
   chan[start_pos].y_max = 0;
   chan[start_pos].v_min = 99999.0f;
@@ -65,8 +66,8 @@ void draw_trace(SampleBuffer buf, int start_pos)
   for (i = 0, p = start_pos + 2; p < buf.size(); i++, p += 2) 
   {
     x = x_offset + trig_x + i * tb[x_index].p_sam;
-    y = y_off - (buf[p] - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count;
-    v = (buf[p] - voltage[y_ind].sign_offset) * V_MAX / ADC_RANGE;    // TODO make V_MAX  change per v/div
+    y = y_off - (buf[p] - sign_offset) * voltage[y_ind].pix_count;
+    v = (buf[p] - sign_offset) * V_MAX / ADC_RANGE;    // TODO make V_MAX  change per v/div
     tft.drawLine(prev_x, prev_y, x, y, chan[start_pos].color);
     prev_x = x;
     prev_y = y;
@@ -213,10 +214,10 @@ void ch_volt_str(int ch, char *str)
   float v = chan[ch].v_max - chan[ch].v_min;
   if (v > 0.001)
   {
-    if (voltage[chan[ch].y_index].sign_offset == 0)   // unsigned
-      sprintf(str, " %.2fVpk", v);  // leading space since it's drawn after freq string
-    else
+    if (chan[ch].signed_v)
       sprintf(str, " %.2fVp-p", v); // signed, show peak-to-peak
+    else
+      sprintf(str, " %.2fVpk", v);  // leading space since it's drawn after freq string
   }
   else  // it's flat. Just show the DC voltage
   {
@@ -325,11 +326,28 @@ void tb_menuCB(EventType ev, int indx, void *param, int x, int y)
 void ch_menuCB(EventType ev, int indx, void *param, int x, int y)
 {
   int ch = (int)param;
+  indx = indx & 0xFF;   // menu item # in the low byte
 
-  if ((indx & 0xFF) == 0xFF)
+  if (indx == 0xFF)
     return;
-  chan[ch].y_index = indx & 0xFF;
-  check_ch_menu(ch, chan[ch].y_index);
+
+  if (indx < VOLTS_MAX)
+  {
+    chan[ch].y_index = indx;
+    check_ch_menu(ch, chan[ch].y_index);
+  }
+  else if (indx == VOLTS_MAX)   // Signed
+  {
+    chan[ch].signed_v = true;
+    chan[ch].m->checkMenuItem(VOLTS_MAX, true);
+    chan[ch].m->checkMenuItem(VOLTS_MAX + 1, false);
+  }
+  else if (indx == VOLTS_MAX + 1)   // Unsigned
+  {
+    chan[ch].signed_v = false;
+    chan[ch].m->checkMenuItem(VOLTS_MAX, false);
+    chan[ch].m->checkMenuItem(VOLTS_MAX + 1, true);
+  }
 }
 
 // Handle vertical pinches on trace.
@@ -515,8 +533,9 @@ void draw_trig_level(int ch, int pri)
     char str[10];
     int y_ind = chan[ch].y_index;
     int adc_count = ADC_RANGE * (trig_level / V_MAX);
+    int sign_offset = chan[ch].signed_v ? (ADC_RANGE / 2) : 0;
 
-    y_trig = chan[ch].y_offset - (adc_count - voltage[y_ind].sign_offset) * voltage[y_ind].pix_count;
+    y_trig = chan[ch].y_offset - (adc_count - sign_offset) * voltage[y_ind].pix_count;
     fc.drawText((char)'T', 0, y_trig + 12, chan[ch].color);
 
     // X trigger indicators are ch-up and ch-down symbol characters.
@@ -605,10 +624,19 @@ void setup()
     for (i = 0; i < VOLTS_MAX; i++)
     {
       ch_vdiv_str(i, str);
-      chan[ch].m->setMenuItem(i, str);
+      if (i < VOLTS_MAX - 1)
+        chan[ch].m->setMenuItem(i, str);
+      else // underline the last one
+        chan[ch].m->setMenuItem(i, str, true, false, true);
     }
     chan[ch].m->checkMenuItem(chan[ch].y_index, true);
     chan[ch].m->setTip("Set channel volts/div, and signed/unsigned");
+
+    // Signed/unsigned toggles
+    chan[ch].m->setMenuItem(VOLTS_MAX, "Signed", true, chan[ch].signed_v);
+    chan[ch].m->setMenuItem(VOLTS_MAX + 1, "Unsigned", true, !chan[ch].signed_v);
+
+    // Pixel X for next channel button and menu
     x = 550;
   }
 
