@@ -55,10 +55,9 @@ void draw_trace(SampleBuffer buf, int start_pos)
   float v;
   int y_off = chan[start_pos].y_offset;
   int y_ind = chan[start_pos].y_index;
-  int sign_offset = chan[start_pos].signed_v ? (ADC_RANGE / 2) : 0;
 
   int prev_x = x_offset + trig_x + start_pos * tb[x_index].p_sam;
-  int prev_y = y_off - (buf[0] - sign_offset) * voltage[y_ind].pix_count;
+  int prev_y = y_off - (buf[0] - SIGN_OFFSET) * voltage[y_ind].pix_count;
   chan[start_pos].y_min = 9999;
   chan[start_pos].y_max = 0;
   chan[start_pos].v_min = 99999.0f;
@@ -66,8 +65,8 @@ void draw_trace(SampleBuffer buf, int start_pos)
   for (i = 0, p = start_pos + 2; p < buf.size(); i++, p += 2) 
   {
     x = x_offset + trig_x + i * tb[x_index].p_sam;
-    y = y_off - (buf[p] - sign_offset) * voltage[y_ind].pix_count;
-    v = (buf[p] - sign_offset) * V_MAX / ADC_RANGE;    // TODO make V_MAX  change per v/div
+    y = y_off - (buf[p] - SIGN_OFFSET) * voltage[y_ind].pix_count;
+    v = (buf[p] - SIGN_OFFSET) * (V_MAX - V_MIN) / ADC_RANGE;    // TODO make V_MAX  change per v/div.
     tft.drawLine(prev_x, prev_y, x, y, chan[start_pos].color);
     prev_x = x;
     prev_y = y;
@@ -214,10 +213,7 @@ void ch_volt_str(int ch, char *str)
   float v = chan[ch].v_max - chan[ch].v_min;
   if (v > 0.001)
   {
-    if (chan[ch].signed_v)
-      sprintf(str, " %.2fVp-p", v); // signed, show peak-to-peak
-    else
-      sprintf(str, " %.2fVpk", v);  // leading space since it's drawn after freq string
+    sprintf(str, " %.2fVp-p", v); // a waveform, show peak-to-peak
   }
   else  // it's flat. Just show the DC voltage
   {
@@ -284,7 +280,7 @@ void ch_tapCB(EventType ev, int indx, void *param, int x, int y)
 // and set the button text to reflect the new setting
 void check_tb_menu(int indx)
 {
-  char str[9];
+  char str[16];
 
   for (int i = 0; i < TB_MAX; i++)
     m_tb.checkMenuItem(i, false);
@@ -297,7 +293,7 @@ void check_tb_menu(int indx)
 // and set the button text to reflect the new setting. 
 void check_ch_menu(int ch, int indx)
 {
-  char str[9];
+  char str[16];
 
   for (int i = 0; i < VOLTS_MAX; i++)
     chan[ch].m->checkMenuItem(i, false);
@@ -335,18 +331,6 @@ void ch_menuCB(EventType ev, int indx, void *param, int x, int y)
   {
     chan[ch].y_index = indx;
     check_ch_menu(ch, chan[ch].y_index);
-  }
-  else if (indx == VOLTS_MAX)   // Signed
-  {
-    chan[ch].signed_v = true;
-    chan[ch].m->checkMenuItem(VOLTS_MAX, true);
-    chan[ch].m->checkMenuItem(VOLTS_MAX + 1, false);
-  }
-  else if (indx == VOLTS_MAX + 1)   // Unsigned
-  {
-    chan[ch].signed_v = false;
-    chan[ch].m->checkMenuItem(VOLTS_MAX, false);
-    chan[ch].m->checkMenuItem(VOLTS_MAX + 1, true);
   }
 }
 
@@ -521,7 +505,7 @@ void trig_dragCB(EventType ev, int indx, void *param, int x, int y, int dx, int 
     dragging = true;
   }
 
-  trig_level = orig_trig_level - (dy / voltage[y_ind].pix_count) * (V_MAX / ADC_RANGE);
+  trig_level = orig_trig_level - (dy / voltage[y_ind].pix_count) * ((V_MAX - V_MIN) / ADC_RANGE);
 }
 
 // Draw the trigger level indicators on the left and above (or below for CH1)
@@ -532,10 +516,9 @@ void draw_trig_level(int ch, int pri)
   {
     char str[10];
     int y_ind = chan[ch].y_index;
-    int adc_count = ADC_RANGE * (trig_level / V_MAX);
-    int sign_offset = chan[ch].signed_v ? (ADC_RANGE / 2) : 0;
+    int adc_count = ADC_RANGE * (trig_level / (V_MAX - V_MIN));   // TODO this is wrong.
 
-    y_trig = chan[ch].y_offset - (adc_count - sign_offset) * voltage[y_ind].pix_count;
+    y_trig = chan[ch].y_offset - (adc_count - SIGN_OFFSET) * voltage[y_ind].pix_count;
     fc.drawText((char)'T', 0, y_trig + 12, chan[ch].color);
 
     // X trigger indicators are ch-up and ch-down symbol characters.
@@ -559,7 +542,7 @@ void draw_trig_level(int ch, int pri)
 void setup() 
 {
   int i;
-  char str[9];
+  char str[16];
 
   Serial.begin(9600);
   while(!Serial) {}  // TODO - remove this when going standalone
@@ -590,7 +573,7 @@ void setup()
   // Timebase
   int pri = 0;
   tb_tdiv_str(x_index, str);
-  mb_tb.initButtonUL(30, 5, 110, 40, WHITE, GREY, WHITE, str, pri++);
+  mb_tb.initButtonUL(30, 5, 110, 40, WHITE, GREY, WHITE, str, 1);
   m_tb.initMenu(&mb_tb, WHITE, DKGREY, GREY, WHITE, tb_menuCB, pri++, NULL);
   for (i = 0; i < TB_MAX; i++)
   {
@@ -630,11 +613,7 @@ void setup()
         chan[ch].m->setMenuItem(i, str, true, false, true);
     }
     chan[ch].m->checkMenuItem(chan[ch].y_index, true);
-    chan[ch].m->setTip("Set channel volts/div, and signed/unsigned");
-
-    // Signed/unsigned toggles
-    chan[ch].m->setMenuItem(VOLTS_MAX, "Signed", true, chan[ch].signed_v);
-    chan[ch].m->setMenuItem(VOLTS_MAX + 1, "Unsigned", true, !chan[ch].signed_v);
+    chan[ch].m->setTip("Set channel volts/div");
 
     // Pixel X for next channel button and menu
     x = 550;
@@ -665,6 +644,17 @@ void setup()
   // 1kHz square wave output for testing
   pinMode(2, OUTPUT);
   tone(2, 1000);
+
+  // Digital output pins for selecting the Fscope-500k voltage range pins
+  // (two for each channel)
+  pinMode(3, OUTPUT);
+  pinMode(4, OUTPUT);
+  pinMode(5, OUTPUT);
+  pinMode(6, OUTPUT);
+  digitalWrite(3, LOW);
+  digitalWrite(4, LOW);
+  digitalWrite(5, LOW);
+  digitalWrite(6, LOW);
 }
 
 void loop() 

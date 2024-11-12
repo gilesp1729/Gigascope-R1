@@ -18,6 +18,7 @@ typedef struct Timebase
 // (the first three will work for a PIX_DIV of 60 or 80)
 Timebase tb[TB_MAX] = 
 {
+//  t_div   sps                       p_sam
   { 10,     1000000,                  PIX_DIV / 10},
   { 20,     1000000,                  PIX_DIV / 20},
   { 50,     1000000 * PIX_DIV / 100,  2           },
@@ -45,12 +46,17 @@ int x_offset = 0;
 #define N_SAMPLES     2048
 
 // TODO! This will depend on the AFE connected to the input, and may not
-// be the same for all voltage ranges. The below code assumes no AFE 
-// (all inputs are 0-3.3V unsigned)
+// be the same for all voltage ranges. The below code assumes no AFE.
 
-// Voltage at an unsigned input resulting in the highest count (ADC_RANGE)
-// assuming 0V is zero (if signed, it's half of that)
-#define V_MAX         3.3f
+// Voltages at an  input resulting in the lowest to highest count 
+// (0 to ADC_RANGE - 1)
+//#define V_MAX         3.3f
+//#define V_MIN         0
+
+// Min and max voltages for the first range of the Fscope-500k AFE.
+#define V_MAX           5.917f
+#define V_MIN          -5.872f
+#define SIGN_OFFSET     (-(V_MIN) / (V_MAX - V_MIN)) * ADC_RANGE
 
 // Number of voltage ranges
 #define VOLTS_MAX     6
@@ -64,12 +70,13 @@ typedef struct Voltage
 
 Voltage voltage[VOLTS_MAX] =
 {
-  { 0.1f,  (V_MAX * PIX_DIV) / (ADC_RANGE * 0.1f)},
-  { 0.2f,  (V_MAX * PIX_DIV) / (ADC_RANGE * 0.2f)},
-  { 0.5f,  (V_MAX * PIX_DIV) / (ADC_RANGE * 0.5f)},
-  { 1.0f,  (V_MAX * PIX_DIV) / (ADC_RANGE * 1.0f)},
-  { 2.0f,  (V_MAX * PIX_DIV) / (ADC_RANGE * 2.0f)},
-  { 5.0f,  (V_MAX * PIX_DIV) / (ADC_RANGE * 5.0f)}
+//  v_div   pix_count
+  { 0.1f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 0.1f)},
+  { 0.2f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 0.2f)},
+  { 0.5f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 0.5f)},
+  { 1.0f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 1.0f)},
+  { 2.0f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 2.0f)},
+  { 5.0f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 5.0f)}
 };
 
 typedef struct Channel
@@ -84,7 +91,6 @@ typedef struct Channel
   int       trig_pt;    // Trigger point (a sample number)
   float     freq;       // Frequency of signal (Hz)
   uint16_t  color;      // Color of traces and channel buttons
-  bool      signed_v;   // If reading is signed, use the sign_offset (ADC_RANGE / 2), otherwise zero 
   GU_Button *b;         // Channel toggle button
   GU_Button *mb;        // Channel menu button
   GU_Menu   *m;         // Channel menu
@@ -92,8 +98,8 @@ typedef struct Channel
 
 Channel chan[2] =
 {
-  {3, 360, true,  0, 0, 0, 0, 0, 0, YELLOW, false, NULL, NULL, NULL },
-  {3, 400, false, 0, 0, 0, 0, 0, 0, CYAN,   false, NULL, NULL, NULL }
+  {3, 360, true,  0, 0, 0, 0, 0, 0, YELLOW, NULL, NULL, NULL },
+  {3, 400, false, 0, 0, 0, 0, 0, 0, CYAN,   NULL, NULL, NULL }
 };
 
 // Trigger level on ch0, and whether rising or falling.
