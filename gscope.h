@@ -48,35 +48,49 @@ int x_offset = 0;
 // TODO! This will depend on the AFE connected to the input, and may not
 // be the same for all voltage ranges. The below code assumes no AFE.
 
-// Voltages at an  input resulting in the lowest to highest count 
-// (0 to ADC_RANGE - 1)
-//#define V_MAX         3.3f
-//#define V_MIN         0
-
 // Min and max voltages for the first range of the Fscope-500k AFE.
-#define V_MAX           5.917f
-#define V_MIN          -5.872f
-#define SIGN_OFFSET     (-(V_MIN) / (V_MAX - V_MIN)) * ADC_RANGE
+//#define V_MAX           5.917f
+//#define V_MIN          -5.872f
+//#define SIGN_OFFSET     (-(V_MIN) / (V_MAX - V_MIN)) * ADC_RANGE
 
-// Number of voltage ranges
-#define VOLTS_MAX     6
+// Min and max voltages for the 4 ranges of the Fscope-500k AFE.
+// The sign offset for each range is calculated using the formula above.
+typedef struct Vrange
+{
+  float     v_min;      // Min and max voltages
+  float     v_max;
+  int       sign_offset; // Sign offset in ADC counts (the ADC count represeting zero volts)
+} Vrange;
 
-// Voltage range entries for each channel
+// Voltage ranges of the Fscope-500k AFE board. The index (0-3) is fed to 
+// the voltage select pins (2 for each channel)
+Vrange range[4] =
+{
+  { -5.872f, 5.917f, 509 },
+  { -2.152f, 2.497f, 473 },
+  { -1.121f, 0.949f, 553 },
+  { -0.404f, 0.595f, 413 }
+};
+
+// Number of volts/div ranges
+#define VOLTS_MAX     5
+
+// Volts/div range entries for each channel
 typedef struct Voltage
 {
   float v_div;      // volts/div
   float pix_count;  // Pixels per ADC count
+  int   range_idx;  // Voltage range index. 
 } Voltage;
 
 Voltage voltage[VOLTS_MAX] =
 {
-//  v_div   pix_count
-  { 0.1f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 0.1f)},
-  { 0.2f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 0.2f)},
-  { 0.5f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 0.5f)},
-  { 1.0f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 1.0f)},
-  { 2.0f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 2.0f)},
-  { 5.0f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 5.0f)}
+//  v_div   pix_count                                        range_idx
+  { 0.1f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 0.1f), 3},  // TODO: Can I initialise this from the ranges?
+  { 0.2f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 0.2f), 2},
+  { 0.5f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 0.5f), 1},
+  { 1.0f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 1.0f), 0},
+  { 2.0f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 2.0f), 0}
 };
 
 typedef struct Channel
