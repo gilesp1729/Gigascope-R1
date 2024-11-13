@@ -6,7 +6,7 @@ The display is 800x480, which is just about enough for a small scope (I'd love a
 can we have one soon please?). UI clutter is kept to a minimum by using touch screen gestures made possible
 by the multi-touch hardware, but there are also menus to select options more conventionally.
 
-Inputs are 0-3.3V on the A0 and A1 pins. The ([Fscope-500k](https://oshwlab.com/fruitloop57/fscope-250k5-v2_copy_copy_copy_copy)) board is supported for a more capable analog front end, 
+Inputs are 0-3.3V on the A0 and A1 pins. The [Fscope-500k](https://oshwlab.com/fruitloop57/fscope-250k5-v2_copy_copy_copy_copy) board is supported for a more capable analog front end, 
 with four voltage ranges in each channel and the ability to use a 10x probe and handle negative inputs.
 
 Library dependencies:

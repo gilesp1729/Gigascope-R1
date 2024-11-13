@@ -95,8 +95,8 @@ void draw_trace(SampleBuffer buf, int start_pos)
 // Return 0 if no trigger was found.
 int find_next_trigger(SampleBuffer buf, int start_pos)
 {
-  int adc_count = ADC_RANGE * (trig_level / V_MAX);
-  int hyst = ADC_RANGE * (level_hyst / V_MAX);
+  int adc_count = ADC_RANGE * (trig_level - V_MIN) / (V_MAX - V_MIN);
+  int hyst = ADC_RANGE * (level_hyst / (V_MAX - V_MIN));
   int i, trig_pos;
 
   trig_pos = 0;
@@ -488,7 +488,7 @@ void trig_menuCB(EventType ev, int indx, void *param, int x, int y)
   }
 }
 
-// Drag callbach for moving the trigger level.
+// Drag callback for moving the trigger level.
 void trig_dragCB(EventType ev, int indx, void *param, int x, int y, int dx, int dy)
 {
   int y_ind = chan[trig_ch].y_index;
@@ -516,7 +516,7 @@ void draw_trig_level(int ch, int pri)
   {
     char str[10];
     int y_ind = chan[ch].y_index;
-    int adc_count = ADC_RANGE * (trig_level / (V_MAX - V_MIN));   // TODO this is wrong.
+    int adc_count = ADC_RANGE * (trig_level - V_MIN) / (V_MAX - V_MIN);
 
     y_trig = chan[ch].y_offset - (adc_count - SIGN_OFFSET) * voltage[y_ind].pix_count;
     fc.drawText((char)'T', 0, y_trig + 12, chan[ch].color);
