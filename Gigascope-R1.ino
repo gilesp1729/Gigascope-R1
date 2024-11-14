@@ -55,9 +55,10 @@ void draw_trace(SampleBuffer buf, int start_pos)
   float v;
   int y_off = chan[start_pos].y_offset;
   int y_ind = chan[start_pos].y_index;
+  int r = voltage[y_ind].range_idx;
 
   int prev_x = x_offset + trig_x + start_pos * tb[x_index].p_sam;
-  int prev_y = y_off - (buf[0] - SIGN_OFFSET) * voltage[y_ind].pix_count;
+  int prev_y = y_off - (buf[0] - SIGN_OFFSET(r)) * voltage[y_ind].pix_count;
   chan[start_pos].y_min = 9999;
   chan[start_pos].y_max = 0;
   chan[start_pos].v_min = 99999.0f;
@@ -65,8 +66,8 @@ void draw_trace(SampleBuffer buf, int start_pos)
   for (i = 0, p = start_pos + 2; p < buf.size(); i++, p += 2) 
   {
     x = x_offset + trig_x + i * tb[x_index].p_sam;
-    y = y_off - (buf[p] - SIGN_OFFSET) * voltage[y_ind].pix_count;
-    v = (buf[p] - SIGN_OFFSET) * (V_MAX - V_MIN) / ADC_RANGE;    // TODO make V_MAX  change per v/div.
+    y = y_off - (buf[p] - SIGN_OFFSET(r)) * voltage[y_ind].pix_count;
+    v = (buf[p] - SIGN_OFFSET(r)) * V_RANGE(r) / ADC_RANGE; 
     tft.drawLine(prev_x, prev_y, x, y, chan[start_pos].color);
     prev_x = x;
     prev_y = y;
@@ -95,8 +96,10 @@ void draw_trace(SampleBuffer buf, int start_pos)
 // Return 0 if no trigger was found.
 int find_next_trigger(SampleBuffer buf, int start_pos)
 {
-  int adc_count = ADC_RANGE * (trig_level - V_MIN) / (V_MAX - V_MIN);
-  int hyst = ADC_RANGE * (level_hyst / (V_MAX - V_MIN));
+  int y_ind = chan[start_pos].y_index;
+  int r = voltage[y_ind].range_idx;
+  int adc_count = ADC_RANGE * (trig_level - V_MIN(r)) / V_RANGE(r);
+  int hyst = ADC_RANGE * level_hyst / V_RANGE(r);
   int i, trig_pos;
 
   trig_pos = 0;
@@ -492,6 +495,7 @@ void trig_menuCB(EventType ev, int indx, void *param, int x, int y)
 void trig_dragCB(EventType ev, int indx, void *param, int x, int y, int dx, int dy)
 {
   int y_ind = chan[trig_ch].y_index;
+  int r = voltage[y_ind].range_idx;
 
   if (ev & EV_RELEASED)   // The drag has been lifted off.
   {
@@ -505,7 +509,7 @@ void trig_dragCB(EventType ev, int indx, void *param, int x, int y, int dx, int 
     dragging = true;
   }
 
-  trig_level = orig_trig_level - (dy / voltage[y_ind].pix_count) * ((V_MAX - V_MIN) / ADC_RANGE);
+  trig_level = orig_trig_level - (dy / voltage[y_ind].pix_count) * V_RANGE(r) / ADC_RANGE;
 }
 
 // Draw the trigger level indicators on the left and above (or below for CH1)
@@ -516,9 +520,10 @@ void draw_trig_level(int ch, int pri)
   {
     char str[10];
     int y_ind = chan[ch].y_index;
-    int adc_count = ADC_RANGE * (trig_level - V_MIN) / (V_MAX - V_MIN);
+    int r = voltage[y_ind].range_idx;
+    int adc_count = ADC_RANGE * (trig_level - V_MIN(r)) / V_RANGE(r);
 
-    y_trig = chan[ch].y_offset - (adc_count - SIGN_OFFSET) * voltage[y_ind].pix_count;
+    y_trig = chan[ch].y_offset - (adc_count - SIGN_OFFSET(r)) * voltage[y_ind].pix_count;
     fc.drawText((char)'T', 0, y_trig + 12, chan[ch].color);
 
     // X trigger indicators are ch-up and ch-down symbol characters.

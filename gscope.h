@@ -45,8 +45,8 @@ int x_offset = 0;
 // Number of samples taken in trace
 #define N_SAMPLES     2048
 
-// TODO! This will depend on the AFE connected to the input, and may not
-// be the same for all voltage ranges. The below code assumes no AFE.
+// This will depend on the AFE connected to the input, and may not
+// be the same for all voltage ranges. 
 
 // Min and max voltages for the first range of the Fscope-500k AFE.
 //#define V_MAX           5.917f
@@ -72,6 +72,11 @@ Vrange range[4] =
   { -0.404f, 0.595f, 413 }
 };
 
+#define V_MAX(r)        range[r].v_max
+#define V_MIN(r)        range[r].v_min
+#define V_RANGE(r)      (range[r].v_max - range[r].v_min)
+#define SIGN_OFFSET(r)  range[r].sign_offset
+
 // Number of volts/div ranges
 #define VOLTS_MAX     5
 
@@ -85,12 +90,12 @@ typedef struct Voltage
 
 Voltage voltage[VOLTS_MAX] =
 {
-//  v_div   pix_count                                        range_idx
-  { 0.1f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 0.1f), 3},  // TODO: Can I initialise this from the ranges?
-  { 0.2f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 0.2f), 2},
-  { 0.5f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 0.5f), 1},
-  { 1.0f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 1.0f), 0},
-  { 2.0f,  ((V_MAX - V_MIN) * PIX_DIV) / (ADC_RANGE * 2.0f), 0}
+//  v_div   pix_count                                   range_idx
+  { 0.1f,  (V_RANGE(0) * PIX_DIV) / (ADC_RANGE * 0.1f), 0},  // 3 when pins working (TODO)
+  { 0.2f,  (V_RANGE(0) * PIX_DIV) / (ADC_RANGE * 0.2f), 0},  // 2
+  { 0.5f,  (V_RANGE(0) * PIX_DIV) / (ADC_RANGE * 0.5f), 0},  // 1
+  { 1.0f,  (V_RANGE(0) * PIX_DIV) / (ADC_RANGE * 1.0f), 0},
+  { 2.0f,  (V_RANGE(0) * PIX_DIV) / (ADC_RANGE * 2.0f), 0}
 };
 
 typedef struct Channel
@@ -108,20 +113,22 @@ typedef struct Channel
   GU_Button *b;         // Channel toggle button
   GU_Button *mb;        // Channel menu button
   GU_Menu   *m;         // Channel menu
+  int       pin0;       // Pins to use to set voltage range to AFE board
+  int       pin1;
 } Channel;
 
 Channel chan[2] =
 {
-  {3, 360, true,  0, 0, 0, 0, 0, 0, YELLOW, NULL, NULL, NULL },
-  {3, 400, false, 0, 0, 0, 0, 0, 0, CYAN,   NULL, NULL, NULL }
+  {3, 360, true,  0, 0, 0, 0, 0, 0, YELLOW, NULL, NULL, NULL, 3, 4 },
+  {3, 400, false, 0, 0, 0, 0, 0, 0, CYAN,   NULL, NULL, NULL, 5, 6 }
 };
 
-// Trigger level on ch0, and whether rising or falling.
+// Trigger levels, and whether rising or falling.
 // Default levels are:
 // - rising, logic HIGH (2.5V)
 // - falling, logic LOW (0.5V)
 // There is a hysteresis band of 0.15V.
-float rising_level = 2.5f;        // TODO - this is assuming VMAV is 3.3V. Should change with v/div.
+float rising_level = 2.5f; 
 float falling_level = 0.5f;
 float level_hyst = 0.15f;
 float trig_level = rising_level;
