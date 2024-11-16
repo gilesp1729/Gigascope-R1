@@ -92,14 +92,14 @@ void draw_trace(SampleBuffer buf, int start_pos)
 
 // Find the next trigger sample in the buffer, starting at the given
 // sample position (assuming interleaved 2-channel data). 
-// Start_pos starts at 0 for channel 0, and 1 for channel 2.
+// Start_pos starts at even for channel 0, and odd for channel 1 (initially 0, 1)
 // Return 0 if no trigger was found.
-int find_next_trigger(SampleBuffer buf, int start_pos)
+int find_next_trigger(SampleBuffer buf, int ch, int start_pos)
 {
-  int y_ind = chan[start_pos].y_index;
+  int y_ind = chan[ch].y_index;
   int r = voltage[y_ind].range_idx;
   int adc_count = ADC_RANGE * (trig_level - V_MIN(r)) / V_RANGE(r);
-  int hyst = ADC_RANGE * level_hyst / V_RANGE(r);
+  int hyst = ADC_RANGE * range[r].level_hyst / V_RANGE(r);
   int i, trig_pos;
 
   trig_pos = 0;
@@ -143,7 +143,7 @@ int find_next_trigger(SampleBuffer buf, int start_pos)
 void find_trig_and_freq(SampleBuffer buf, int start_pos)
 {
   int trig_pos;
-  int prev_trig = find_next_trigger(buf, start_pos);
+  int prev_trig = find_next_trigger(buf, start_pos, start_pos);
   int n_trig = 0;
   long spacing = 0;
 
@@ -153,7 +153,7 @@ void find_trig_and_freq(SampleBuffer buf, int start_pos)
     return;
   chan[start_pos].trig_pt = prev_trig;
 
-  while ((trig_pos = find_next_trigger(buf, prev_trig)) != 0)
+  while ((trig_pos = find_next_trigger(buf, start_pos, prev_trig)) != 0)
   {
 #if 0
     // Debugging print to diagnose looping.
@@ -334,6 +334,11 @@ void ch_menuCB(EventType ev, int indx, void *param, int x, int y)
   {
     chan[ch].y_index = indx;
     check_ch_menu(ch, chan[ch].y_index);
+
+    // Update the voltage pins on the AFE.
+    int r = voltage[indx].range_idx;
+    digitalWrite(chan[ch].pin1, (r >> 1));
+    digitalWrite(chan[ch].pin0, (r & 1));
   }
 }
 
@@ -368,8 +373,14 @@ void ch_pinchCB(EventType ev, int indx, void *param, int dx, int dy, float sx, f
       min_indx = i;
     }
   }
-  chan[ch].y_index = min_indx;
+  chan[ch].y_index = min_indx; 
   check_ch_menu(ch, chan[ch].y_index);
+
+    // Update the voltage pins on the AFE.
+    int r = voltage[min_indx].range_idx;
+    digitalWrite(chan[ch].pin1, (r >> 1));
+    digitalWrite(chan[ch].pin0, (r & 1));
+
 }
 
 // Handle horizontal drags to change the position of the trigger point(trig_x)
@@ -448,6 +459,9 @@ void ch_dragCB(EventType ev, int indx, void *param, int x, int y, int dx, int dy
 // Trigger menu selection.
 void trig_menuCB(EventType ev, int indx, void *param, int x, int y)
 {
+  int y_ind = chan[trig_ch].y_index;
+  int r = voltage[y_ind].range_idx;
+
   indx = indx & 0xFF;   // menu item # in the low byte
   if (indx == 0xFF)
     return;
@@ -458,15 +472,15 @@ void trig_menuCB(EventType ev, int indx, void *param, int x, int y)
     {
     case 0:
       mb_trig.setText("Off");
-      trig_level = rising_level;
+      trig_level = range[r].rising_level;
       break;
     case 1:
       mb_trig.setText((char)2);
-      trig_level = rising_level;
+      trig_level = range[r].rising_level;
       break;
     case 2:
       mb_trig.setText((char)4);
-      trig_level = falling_level;
+      trig_level = range[r].falling_level;
       break;
     }
     m_trig.checkMenuItem(0, false);

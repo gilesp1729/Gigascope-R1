@@ -57,19 +57,23 @@ int x_offset = 0;
 // The sign offset for each range is calculated using the formula above.
 typedef struct Vrange
 {
-  float     v_min;      // Min and max voltages
+  float     v_min;          // Min and max voltages
   float     v_max;
-  int       sign_offset; // Sign offset in ADC counts (the ADC count represeting zero volts)
+  int       sign_offset;    // Sign offset in ADC counts (the ADC count represeting zero volts)
+  float     rising_level;   // Rising and falling trigger levels (in volts) for this range
+  float     falling_level;
+  float     level_hyst;     // Hysteresis band to mminimise false triggers
 } Vrange;
 
 // Voltage ranges of the Fscope-500k AFE board. The index (0-3) is fed to 
 // the voltage select pins (2 for each channel)
 Vrange range[4] =
 {
-  { -5.872f, 5.917f, 509 },
-  { -2.152f, 2.497f, 473 },
-  { -1.121f, 0.949f, 553 },
-  { -0.404f, 0.595f, 413 }
+  // v_min   v_max   sign_off  rising  falling  hyst
+  { -5.872f, 5.917f, 509,       2.5f,   0.8f,   0.15f },
+  { -2.152f, 2.497f, 473,       1.25f,  0.4f,   0.075f },
+  { -1.121f, 0.949f, 553,       0.5f,   0.2f,   0.03f },
+  { -0.404f, 0.595f, 413,       0.25f,  0.1f,   0.02f }
 };
 
 #define V_MAX(r)        range[r].v_max
@@ -125,13 +129,11 @@ Channel chan[2] =
 
 // Trigger levels, and whether rising or falling.
 // Default levels are:
-// - rising, logic HIGH (2.5V)
-// - falling, logic LOW (0.5V)
-// There is a hysteresis band of 0.15V.
-float rising_level = 2.5f; 
-float falling_level = 0.5f;
-float level_hyst = 0.15f;
-float trig_level = rising_level;
+// - rising, logic HIGH (2.5V = 75% of +3.3V logic supply)
+// - falling, logic LOW (0.8V = 25%)
+// There is a hysteresis band of 0.15V (= 5%). When a voltage range is changed, the trigger
+// level and hyst band are readjusted to bring them back into the new range.
+float trig_level = range[0].rising_level;
 int trig = 0;     // 0 = Off, 1 = rising, 2 = falling
-int trig_ch = 0;  // Channel number to trigger (and to display frequency etc)
-int trig_x = 0;   // X position of trigger point. Initially at left edge (0)
+int trig_ch = 0;  // Channel number to trigger on (and to display frequency etc)
+int trig_x = 20;  // X position of trigger point. Initially at or near left edge (0)
