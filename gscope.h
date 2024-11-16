@@ -95,9 +95,9 @@ typedef struct Voltage
 Voltage voltage[VOLTS_MAX] =
 {
 //  v_div   pix_count                                   range_idx
-  { 0.1f,  (V_RANGE(0) * PIX_DIV) / (ADC_RANGE * 0.1f), 0},  // 3 when pins working (TODO)
-  { 0.2f,  (V_RANGE(0) * PIX_DIV) / (ADC_RANGE * 0.2f), 0},  // 2
-  { 0.5f,  (V_RANGE(0) * PIX_DIV) / (ADC_RANGE * 0.5f), 0},  // 1
+  { 0.1f,  (V_RANGE(3) * PIX_DIV) / (ADC_RANGE * 0.1f), 3},
+  { 0.2f,  (V_RANGE(2) * PIX_DIV) / (ADC_RANGE * 0.2f), 2},
+  { 0.5f,  (V_RANGE(1) * PIX_DIV) / (ADC_RANGE * 0.5f), 1}, 
   { 1.0f,  (V_RANGE(0) * PIX_DIV) / (ADC_RANGE * 1.0f), 0},
   { 2.0f,  (V_RANGE(0) * PIX_DIV) / (ADC_RANGE * 2.0f), 0}
 };
